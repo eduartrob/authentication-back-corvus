@@ -20,7 +20,7 @@ const loginSchema = z.object({
 });
 
 const googleLoginSchema = z.object({
-  idToken: z.string(),
+  authCode: z.string(),
 });
 
 export class AuthController {
@@ -55,7 +55,7 @@ export class AuthController {
   async googleLogin(req: Request, res: Response) {
     try {
       const validatedData = googleLoginSchema.parse(req.body);
-      const data = await authService.googleLogin(validatedData.idToken);
+      const data = await authService.googleLogin(validatedData.authCode);
       res.status(200).json(data);
     } catch (error: any) {
       if (error instanceof z.ZodError) {

@@ -4,8 +4,11 @@ import { OAuth2Client } from 'google-auth-library';
 import prisma from '../utils/prisma';
 import logger from '../utils/logger';
 
-const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
-
+const googleClient = new OAuth2Client(
+  process.env.GOOGLE_CLIENT_ID,
+  process.env.GOOGLE_CLIENT_SECRET,
+  'postmessage' // Necesario para flujos de server auth code desde cliente
+);
 export class AuthService {
   async register(data: any) {
     try {
@@ -72,32 +75,38 @@ export class AuthService {
     }
   }
 
-  async googleLogin(idToken: string) {
+  async googleLogin(authCode: string) {
     try {
-      // Si estamos en desarrollo y no hay GOOGLE_CLIENT_ID configurado, saltamos la verificación real de Google
-      // (solo para fines de pruebas locales si no has creado el Client ID todavía)
-      // En producción, SIEMPRE usar googleClient.verifyIdToken
-      
       let email = '';
       let fullName = '';
       let profilePicture = '';
+      let refreshToken = null;
+      let accessToken = null;
 
       if (process.env.NODE_ENV === 'development' && !process.env.GOOGLE_CLIENT_ID) {
-        // MOCK PARA DESARROLLO (decodificación básica sin verificar firma si no hay CLIENT_ID)
-        const decoded: any = jwt.decode(idToken);
-        if (!decoded || !decoded.email) throw new Error('Token inválido');
+        // MOCK PARA DESARROLLO
+        const decoded: any = jwt.decode(authCode); // asumiendo que en dev mandan un jwt falso
+        if (!decoded || !decoded.email) throw new Error('Token inválido en desarrollo');
         email = decoded.email;
         fullName = decoded.name || '';
         profilePicture = decoded.picture || '';
       } else {
+        // 1. Intercambiar el authCode por tokens (Access Token y Refresh Token)
+        const { tokens } = await googleClient.getToken(authCode);
+        
+        refreshToken = tokens.refresh_token || null;
+        accessToken = tokens.access_token || null;
+
+        // 2. Extraer la identidad del id_token que viene en la respuesta
         const ticket = await googleClient.verifyIdToken({
-          idToken,
+          idToken: tokens.id_token!,
           audience: process.env.GOOGLE_CLIENT_ID,
         });
+        
         const payload = ticket.getPayload();
         
         if (!payload || !payload.email) {
-          throw new Error('Invalid Google token');
+          throw new Error('Google token payload inválido');
         }
 
         email = payload.email;
@@ -140,16 +149,22 @@ export class AuthService {
             roleId: role.id,
             full_name: fullName || null,
             profile_picture: profilePicture || null,
+            google_refresh_token: refreshToken,
+            google_access_token: accessToken
           },
           include: { role: true }
         });
       } else {
-        // Si ya existe pero cambió de foto o nombre en Google, podríamos actualizarlo aquí
+        // Si ya existe pero cambió de foto o nombre en Google, actualizamos
+        // IMPORTANTE: Solo actualizamos el refresh_token si Google nos manda uno nuevo.
+        // Si manda null, conservamos el que ya teníamos en la BD.
         user = await prisma.user.update({
           where: { email },
           data: {
             full_name: fullName || user.full_name,
-            profile_picture: profilePicture || user.profile_picture
+            profile_picture: profilePicture || user.profile_picture,
+            google_access_token: accessToken || user.google_access_token,
+            ...(refreshToken && { google_refresh_token: refreshToken })
           },
           include: { role: true }
         });
