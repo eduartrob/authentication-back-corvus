@@ -107,3 +107,5 @@ dist
 .DS_Store
 
 /src/generated/prisma
+prisma.config.js*
+prisma.config.d.ts*
