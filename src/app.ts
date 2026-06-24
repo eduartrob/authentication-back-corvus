@@ -15,7 +15,7 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 // Rutas
-app.use('/api/v1/auth', authRoutes);
+app.use('/', authRoutes);
 
 // Manejo de Errores Global
 app.use(errorHandler);

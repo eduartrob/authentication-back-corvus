@@ -8,6 +8,8 @@ const authController = new AuthController();
 router.post('/register', authController.register);
 router.post('/login', authController.login);
 router.post('/google', authController.googleLogin);
+router.post('/logout', authenticateJWT, authController.logout);
+router.post('/recover-password', authController.recoverPassword);
 router.get('/me', authenticateJWT, authController.me);
 
 export default router;
