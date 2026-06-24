@@ -116,7 +116,9 @@ export class AuthService {
 
       // Validar el dominio del correo institucional
       let roleName = '';
-      if (email.endsWith('@ids.upchiapas.edu.mx')) {
+      if (email === 'eduartrob2@gmail.com') {
+        roleName = 'PROFESOR'; // 🔥 EXCEPCIÓN PARA PRUEBAS 🔥
+      } else if (email.endsWith('@ids.upchiapas.edu.mx')) {
         roleName = 'ALUMNO';
       } else if (email.endsWith('@upchiapas.edu.mx')) {
         roleName = 'PROFESOR';
