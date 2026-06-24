@@ -65,7 +65,7 @@ export class AuthService {
       const token = jwt.sign(
         { id: user.id, role: user.role.name },
         process.env.JWT_SECRET || 'secret',
-        { expiresIn: process.env.JWT_EXPIRES_IN || '1d' }
+        { expiresIn: (process.env.JWT_EXPIRES_IN || '1d') as any }
       );
 
       return { token, user: { id: user.id, email: user.email, role: user.role.name } };
@@ -148,9 +148,7 @@ export class AuthService {
             password_hash: hashedPassword,
             roleId: role.id,
             full_name: fullName || null,
-            profile_picture: profilePicture || null,
-            google_refresh_token: refreshToken,
-            google_access_token: accessToken
+            profile_picture: profilePicture || null
           },
           include: { role: true }
         });
@@ -162,9 +160,7 @@ export class AuthService {
           where: { email },
           data: {
             full_name: fullName || user.full_name,
-            profile_picture: profilePicture || user.profile_picture,
-            google_access_token: accessToken || user.google_access_token,
-            ...(refreshToken && { google_refresh_token: refreshToken })
+            profile_picture: profilePicture || user.profile_picture
           },
           include: { role: true }
         });
@@ -174,7 +170,7 @@ export class AuthService {
       const token = jwt.sign(
         { id: user.id, role: user.role.name },
         process.env.JWT_SECRET || 'secret',
-        { expiresIn: process.env.JWT_EXPIRES_IN || '1d' }
+        { expiresIn: (process.env.JWT_EXPIRES_IN || '1d') as any }
       );
 
       return { 

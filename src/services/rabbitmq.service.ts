@@ -1,4 +1,5 @@
-import amqp, { Connection, Channel } from 'amqplib';
+import * as amqp from 'amqplib';
+import type { Connection, Channel } from 'amqplib';
 
 class RabbitMQService {
   private connection!: Connection;
@@ -8,8 +9,8 @@ class RabbitMQService {
 
   async connect() {
     try {
-      this.connection = await amqp.connect(this.URL);
-      this.channel = await this.connection.createChannel();
+      this.connection = (await amqp.connect(this.URL)) as any;
+      this.channel = await (this.connection as any).createChannel();
       
       // Aseguramos que el Exchange exista
       await this.channel.assertExchange(this.EXCHANGE, 'topic', { durable: true });
