@@ -7,7 +7,7 @@ import logger from '../utils/logger';
 const googleClient = new OAuth2Client(
   process.env.GOOGLE_CLIENT_ID,
   process.env.GOOGLE_CLIENT_SECRET,
-  'postmessage' // Necesario para flujos de server auth code desde cliente
+  '' // Usar string vacío para serverAuthCodes generados desde Android/iOS
 );
 export class AuthService {
   async register(data: any) {
