@@ -45,7 +45,7 @@ export const getFolders = async (req: Request, res: Response) => {
 
 export const checkFolder = async (req: Request, res: Response) => {
     try {
-        const { folder_id } = req.params;
+        const folder_id = req.params.folder_id as string;
         const exists = await FolderService.checkFolderExists(folder_id);
         return res.status(200).json({ exists });
     } catch (error) {
