@@ -1,0 +1,21 @@
+name: Deploy Auth Service
+
+on:
+  push:
+    branches: [ dev ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to Contabo via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.CONTABO_HOST }}
+          username: ${{ secrets.CONTABO_USER }}
+          key: ${{ secrets.CONTABO_SSH_KEY }}
+          script: |
+            cd /home/corvus/authentication-back-corvus
+            git pull origin dev
+            cd /home/corvus/orchestration-back-corvus
+            docker compose up --build -d auth-service
