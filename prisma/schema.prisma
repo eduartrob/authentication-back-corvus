@@ -32,9 +32,24 @@ model User {
   
   google_refresh_token String? @db.Text
   google_access_token  String? @db.Text
+
+  linked_folders  LinkedFolder[]
   
   createdAt       DateTime @default(now()) @map("created_at")
   updatedAt       DateTime @updatedAt @map("updated_at")
 
   @@map("users")
+}
+
+model LinkedFolder {
+  id          String   @id @default(uuid()) @db.Uuid
+  folder_id   String   @unique
+  folder_name String
+  userId      String   @db.Uuid
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@map("linked_folders")
 }
