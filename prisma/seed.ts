@@ -99,6 +99,32 @@ async function main() {
     console.log(`🔄 Usuario alumno tester actualizado: ${emailStudent}`);
   }
 
+  // 5. Crear usuario eduartrob2@gmail.com (Profesor)
+  const emailEduartProf = 'eduartrob2@gmail.com';
+  const hashedPasswordEduartProf = await bcrypt.hash('profesor123.', 10);
+  const existingEduartProf = await prisma.user.findUnique({ where: { email: emailEduartProf } });
+
+  if (!existingEduartProf) {
+    await prisma.user.create({
+      data: {
+        email: emailEduartProf,
+        password_hash: hashedPasswordEduartProf,
+        roleId: roles['PROFESOR'].id,
+        full_name: 'Eduardo Profesor Tester',
+      },
+    });
+    console.log(`✅ Usuario profesor creado: ${emailEduartProf}`);
+  } else {
+    await prisma.user.update({
+      where: { email: emailEduartProf },
+      data: {
+        password_hash: hashedPasswordEduartProf,
+        roleId: roles['PROFESOR'].id,
+      },
+    });
+    console.log(`🔄 Usuario profesor actualizado: ${emailEduartProf}`);
+  }
+
   console.log('🎉 Seeding completado con éxito.');
 }
 
