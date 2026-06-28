@@ -5,45 +5,98 @@ import bcrypt from 'bcrypt';
 async function main() {
   console.log('🌱 Iniciando seeder de base de datos...');
 
-  // 1. Crear el rol de ADMINISTRADOR si no existe
-  let adminRole = await prisma.role.findUnique({ where: { name: 'ADMINISTRADOR' } });
-  if (!adminRole) {
-    adminRole = await prisma.role.create({
-      data: { name: 'ADMINISTRADOR' },
-    });
-    console.log('✅ Rol ADMINISTRADOR creado');
-  } else {
-    console.log('ℹ️ Rol ADMINISTRADOR ya existe');
+  // 1. Crear los roles principales si no existen
+  const roleNames = ['ADMINISTRADOR', 'PROFESOR', 'ALUMNO'];
+  const roles: Record<string, any> = {};
+
+  for (const name of roleNames) {
+    let role = await prisma.role.findUnique({ where: { name } });
+    if (!role) {
+      role = await prisma.role.create({ data: { name } });
+      console.log(`✅ Rol ${name} creado`);
+    } else {
+      console.log(`ℹ️ Rol ${name} ya existe`);
+    }
+    roles[name] = role;
   }
 
   // 2. Crear al usuario administrador maestro
-  const email = 'eduartrob@gmail.com';
-  const plainPassword = 'eduart_rob09';
-  const hashedPassword = await bcrypt.hash(plainPassword, 10);
+  const emailAdmin = 'eduartrob@gmail.com';
+  const hashedPasswordAdmin = await bcrypt.hash('eduart_rob09', 10);
 
-  const existingUser = await prisma.user.findUnique({ where: { email } });
-
-  if (!existingUser) {
+  const existingAdmin = await prisma.user.findUnique({ where: { email: emailAdmin } });
+  if (!existingAdmin) {
     await prisma.user.create({
       data: {
-        email,
-        password_hash: hashedPassword,
-        roleId: adminRole.id,
+        email: emailAdmin,
+        password_hash: hashedPasswordAdmin,
+        roleId: roles['ADMINISTRADOR'].id,
         full_name: 'Eduardo Administrador',
         username: 'admin_eduart'
       },
     });
-    console.log(`✅ Usuario admin creado: ${email}`);
+    console.log(`✅ Usuario admin creado: ${emailAdmin}`);
   } else {
-    // Si ya existe, actualizamos su rol y contraseña para asegurar acceso
     await prisma.user.update({
-      where: { email },
+      where: { email: emailAdmin },
       data: {
-        password_hash: hashedPassword,
-        roleId: adminRole.id,
+        password_hash: hashedPasswordAdmin,
+        roleId: roles['ADMINISTRADOR'].id,
       },
     });
-    console.log(`🔄 Usuario admin actualizado: ${email}`);
+    console.log(`🔄 Usuario admin actualizado: ${emailAdmin}`);
+  }
+
+  // 3. Crear usuario Tester Profesor
+  const emailProf = 'testerprofesores713@gmail.com';
+  const hashedPasswordProf = await bcrypt.hash('pomKinGu!', 10);
+  const existingProf = await prisma.user.findUnique({ where: { email: emailProf } });
+
+  if (!existingProf) {
+    await prisma.user.create({
+      data: {
+        email: emailProf,
+        password_hash: hashedPasswordProf,
+        roleId: roles['PROFESOR'].id,
+        full_name: 'Profesor Tester Corvus',
+      },
+    });
+    console.log(`✅ Usuario profesor tester creado: ${emailProf}`);
+  } else {
+    await prisma.user.update({
+      where: { email: emailProf },
+      data: {
+        password_hash: hashedPasswordProf,
+        roleId: roles['PROFESOR'].id,
+      },
+    });
+    console.log(`🔄 Usuario profesor tester actualizado: ${emailProf}`);
+  }
+
+  // 4. Crear usuario Tester Alumno
+  const emailStudent = 'testeralumnos@gmail.com';
+  const hashedPasswordStudent = await bcrypt.hash('eduSujeTester55.', 10);
+  const existingStudent = await prisma.user.findUnique({ where: { email: emailStudent } });
+
+  if (!existingStudent) {
+    await prisma.user.create({
+      data: {
+        email: emailStudent,
+        password_hash: hashedPasswordStudent,
+        roleId: roles['ALUMNO'].id,
+        full_name: 'Alumno Tester Corvus',
+      },
+    });
+    console.log(`✅ Usuario alumno tester creado: ${emailStudent}`);
+  } else {
+    await prisma.user.update({
+      where: { email: emailStudent },
+      data: {
+        password_hash: hashedPasswordStudent,
+        roleId: roles['ALUMNO'].id,
+      },
+    });
+    console.log(`🔄 Usuario alumno tester actualizado: ${emailStudent}`);
   }
 
   console.log('🎉 Seeding completado con éxito.');

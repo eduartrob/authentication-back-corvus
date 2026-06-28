@@ -114,14 +114,22 @@ export class AuthService {
         profilePicture = payload.picture || '';
       }
 
-      // Validar el dominio del correo institucional
+      // Validar el dominio del correo institucional o las cuentas específicas de pruebas de Google
       let roleName = '';
-      if (email === 'eduartrob2@gmail.com') {
-        roleName = 'PROFESOR'; // 🔥 EXCEPCIÓN PARA PRUEBAS 🔥
-      } else if (email.endsWith('@ids.upchiapas.edu.mx')) {
-        roleName = 'ALUMNO';
-      } else if (email.endsWith('@upchiapas.edu.mx')) {
+      const emailLower = email.toLowerCase();
+      
+      if (
+        emailLower === 'eduartrob2@gmail.com' ||
+        emailLower === 'testerprofesores713@gmail.com' ||
+        emailLower.endsWith('@upchiapas.edu.mx')
+      ) {
         roleName = 'PROFESOR';
+      } else if (
+        emailLower === 'testeralumnos@gmail.com' ||
+        emailLower === 'eduartrob3@gmail.com' ||
+        emailLower.endsWith('@ids.upchiapas.edu.mx')
+      ) {
+        roleName = 'ALUMNO';
       } else {
         throw new Error('Dominio de correo no permitido. Solo se aceptan correos institucionales de la universidad.');
       }
