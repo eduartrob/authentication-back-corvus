@@ -35,6 +35,7 @@ model User {
 
   linked_folders  LinkedFolder[]
   llm_sessions    LlmSession[]
+  activity_logs   ActivityLog[]
   
   createdAt       DateTime @default(now()) @map("created_at")
   updatedAt       DateTime @updatedAt @map("updated_at")
@@ -78,3 +79,16 @@ model LlmSession {
   @@map("llm_sessions")
 }
 
+model ActivityLog {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String?  @db.Uuid
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  
+  action    String   // 'LOGIN', 'UPLOAD_DOCUMENT', 'VALIDATE_CLUSTER', 'SYSTEM_ALERT'
+  detail    String   @db.Text
+  ipAddress String?  @db.VarChar(45) // Support IPv6
+  
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("activity_logs")
+}
