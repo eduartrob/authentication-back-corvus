@@ -125,6 +125,58 @@ async function main() {
     console.log(`🔄 Usuario profesor actualizado: ${emailEduartProf}`);
   }
 
+  // -# 6 crear usuario sujey admin
+  const emailSujey = 'calderonmartinezsujey@gmail.com';
+  const hashedPasswordSujey = await bcrypt.hash('chaDaTijeras5!', 10);
+  const existingSujey = await prisma.user.findUnique({ where: { email: emailSujey } });
+
+  if (!existingSujey) {
+    await prisma.user.create({
+      data: {
+        email: emailSujey,
+        password_hash: hashedPasswordSujey,
+        roleId: roles['ADMINISTRADOR'].id,
+        full_name: 'Sujey Administradora',
+      },
+    });
+    console.log(`✅ Usuario admin creado: ${emailSujey}`);
+  } else {
+    await prisma.user.update({
+      where: { email: emailSujey },
+      data: {
+        password_hash: hashedPasswordSujey,
+        roleId: roles['ADMINISTRADOR'].id,
+      },
+    });
+    console.log(`🔄 Usuario admin actualizado: ${emailSujey}`);
+  }
+
+  // -# 7 crear usuario reyguz admin
+  const emailRey = 'reyguz421@gmail.com';
+  const hashedPasswordRey = await bcrypt.hash('papaJupiter', 10);
+  const existingRey = await prisma.user.findUnique({ where: { email: emailRey } });
+
+  if (!existingRey) {
+    await prisma.user.create({
+      data: {
+        email: emailRey,
+        password_hash: hashedPasswordRey,
+        roleId: roles['ADMINISTRADOR'].id,
+        full_name: 'Rey Administrador',
+      },
+    });
+    console.log(`✅ Usuario admin creado: ${emailRey}`);
+  } else {
+    await prisma.user.update({
+      where: { email: emailRey },
+      data: {
+        password_hash: hashedPasswordRey,
+        roleId: roles['ADMINISTRADOR'].id,
+      },
+    });
+    console.log(`🔄 Usuario admin actualizado: ${emailRey}`);
+  }
+
   console.log('🎉 Seeding completado con éxito.');
 }
 
