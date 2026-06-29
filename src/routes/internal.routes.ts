@@ -3,12 +3,6 @@ import prisma from '../utils/prisma';
 
 const router = Router();
 
-/**
- * GET /internal/users/:userId/llm-quota
- * Devuelve cuántas sesiones LLM ha usado un usuario.
- * Este endpoint es INTERNO — no está expuesto al API Gateway.
- * Solo lo llama llm-back-corvus desde la red Docker interna.
- */
 router.get('/users/:userId/llm-quota', async (req, res) => {
   const { userId } = req.params;
 
@@ -27,17 +21,12 @@ router.get('/users/:userId/llm-quota', async (req, res) => {
   }
 });
 
-/**
- * POST /internal/users/:userId/llm-sessions
- * Registra una nueva sesión LLM en la DB.
- * Llamado por llm-back-corvus al crear una sesión (solo en modo producción).
- */
 router.post('/users/:userId/llm-sessions', async (req, res) => {
   const { userId } = req.params;
   const { session_id, verdict, proposal_summary, analysis_json } = req.body;
 
   try {
-    // Obtener el número de sesión actual
+    // -# obtener el numero de sesion actual
     const sessionCount = await (prisma as any).llmSession.count({
       where: { userId },
     });

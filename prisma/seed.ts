@@ -5,7 +5,7 @@ import bcrypt from 'bcrypt';
 async function main() {
   console.log('🌱 Iniciando seeder de base de datos...');
 
-  // 1. Crear los roles principales si no existen
+  // -# 1 crear los roles principales si no existen
   const roleNames = ['ADMINISTRADOR', 'PROFESOR', 'ALUMNO'];
   const roles: Record<string, any> = {};
 
@@ -20,7 +20,7 @@ async function main() {
     roles[name] = role;
   }
 
-  // 2. Crear al usuario administrador maestro
+  // -# 2 crear al usuario administrador maestro
   const emailAdmin = 'eduartrob@gmail.com';
   const hashedPasswordAdmin = await bcrypt.hash('eduart_rob09', 10);
 
@@ -47,7 +47,7 @@ async function main() {
     console.log(`🔄 Usuario admin actualizado: ${emailAdmin}`);
   }
 
-  // 3. Crear usuario Tester Profesor
+  // -# 3 crear usuario tester profesor
   const emailProf = 'testerprofesores713@gmail.com';
   const hashedPasswordProf = await bcrypt.hash('pomKinGu!', 10);
   const existingProf = await prisma.user.findUnique({ where: { email: emailProf } });
@@ -73,7 +73,7 @@ async function main() {
     console.log(`🔄 Usuario profesor tester actualizado: ${emailProf}`);
   }
 
-  // 4. Crear usuario Tester Alumno
+  // -# 4 crear usuario tester alumno
   const emailStudent = 'testeralumnos@gmail.com';
   const hashedPasswordStudent = await bcrypt.hash('eduSujeTester55.', 10);
   const existingStudent = await prisma.user.findUnique({ where: { email: emailStudent } });
@@ -99,7 +99,7 @@ async function main() {
     console.log(`🔄 Usuario alumno tester actualizado: ${emailStudent}`);
   }
 
-  // 5. Crear usuario eduartrob2@gmail.com (Profesor)
+  // -# 5 crear usuario eduartrob2gmailcom profesor
   const emailEduartProf = 'eduartrob2@gmail.com';
   const hashedPasswordEduartProf = await bcrypt.hash('profesor123.', 10);
   const existingEduartProf = await prisma.user.findUnique({ where: { email: emailEduartProf } });

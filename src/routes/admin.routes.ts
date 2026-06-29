@@ -3,13 +3,11 @@ import prisma from '../utils/prisma';
 
 const router = Router();
 
-// GET /stats/users
-// Devuelve el conteo de Alumnos y Profesores
 router.get('/stats/users', async (req, res) => {
   try {
     const totalUsers = await prisma.user.count();
     
-    // Contamos por rol para dar mas detalles
+    // -# contamos por rol para dar mas detalles
     const studentsRole = await prisma.role.findUnique({ where: { name: 'ALUMNO' } });
     const teachersRole = await prisma.role.findUnique({ where: { name: 'PROFESOR' } });
     

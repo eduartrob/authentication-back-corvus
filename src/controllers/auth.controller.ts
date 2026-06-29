@@ -51,7 +51,6 @@ export class AuthController {
       const validatedData = loginSchema.parse(req.body);
       const data = await authService.login(validatedData.email, validatedData.password);
       
-      // Disparar evento a Notificaciones si el dispositivo mandó su token FCM
       if (validatedData.fcmToken && data.user) {
         rabbitmqService.publishDeviceRegistered(data.user.id, validatedData.fcmToken);
       }
@@ -71,7 +70,6 @@ export class AuthController {
       const validatedData = googleLoginSchema.parse(req.body);
       const data = await authService.googleLogin(validatedData.authCode);
 
-      // Disparar evento a Notificaciones
       if (validatedData.fcmToken && data.user) {
         rabbitmqService.publishDeviceRegistered(data.user.id, validatedData.fcmToken);
       }
@@ -87,7 +85,6 @@ export class AuthController {
   }
 
   async me(req: Request, res: Response) {
-      // req.user is set by authMiddleware
       res.status(200).json({ user: (req as any).user });
   }
 
@@ -97,7 +94,6 @@ export class AuthController {
       const user = (req as any).user;
 
       if (user && fcmToken) {
-        // Disparar evento a Notificaciones para que borre este token especifico
         rabbitmqService.publishDeviceUnregistered(user.id, fcmToken);
       }
       res.status(200).json({ message: 'Logged out successfully' });
@@ -110,23 +106,14 @@ export class AuthController {
     try {
       const validatedData = recoverPasswordSchema.parse(req.body);
       
-      // En producción aquí buscaríamos el usuario en BD y verificaríamos que exista
-      // const user = await prisma.user.findUnique({ where: { email: validatedData.email } });
-      // if (!user) return res.status(404).json({ error: "User not found" });
 
-      // 1. Generar PIN criptográficamente seguro de 6 dígitos
+      // -# 1 generar pin criptograficamente seguro de 6 digitos
       const securePin = crypto.randomInt(100000, 999999).toString();
 
-      // 2. Aquí guardaríamos el PIN en la base de datos (con expiración) para validarlo después
-      // await prisma.passwordResetToken.create({ ... })
-
-      // 3. Disparar el evento a RabbitMQ para que el servicio de Notificaciones envíe el correo
-      // Pasamos un ID dummy "user-id" para la prueba
       rabbitmqService.publishPasswordRecovery("user-id", validatedData.email, securePin);
 
       res.status(200).json({ 
         message: 'Si el correo existe, se ha enviado un PIN de recuperación.',
-        // TODO: Eliminar esta línea en producción. Se expone aquí para facilitar las pruebas E2E.
         _test_pin: securePin 
       });
     } catch (error: any) {
