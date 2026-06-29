@@ -26,4 +26,63 @@ router.get('/stats/users', async (req, res) => {
   }
 });
 
+router.post('/activity', async (req, res) => {
+  try {
+    const { userId, action, detail, ipAddress } = req.body;
+    if (!action || !detail) {
+      return res.status(400).json({ error: 'Faltan campos requeridos' });
+    }
+    
+    const log = await prisma.activityLog.create({
+      data: {
+        userId: userId || null,
+        action,
+        detail,
+        ipAddress: ipAddress || null
+      }
+    });
+    
+    return res.status(201).json({ success: true, log });
+  } catch (error) {
+    console.error('Error in POST /activity:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+router.get('/activity', async (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit as string) || 50;
+    const offset = parseInt(req.query.offset as string) || 0;
+    
+    const logs = await prisma.activityLog.findMany({
+      take: limit,
+      skip: offset,
+      orderBy: { createdAt: 'desc' },
+      include: {
+        user: {
+          select: {
+            full_name: true,
+            role: { select: { name: true } },
+            profile_picture: true,
+            email: true
+          }
+        }
+      }
+    });
+    
+    const total = await prisma.activityLog.count();
+    
+    return res.json({
+      success: true,
+      total,
+      limit,
+      offset,
+      items: logs
+    });
+  } catch (error) {
+    console.error('Error in GET /activity:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 export default router;

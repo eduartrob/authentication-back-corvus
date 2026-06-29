@@ -3,6 +3,7 @@ import { AuthService } from '../services/auth.service';
 import { z } from 'zod';
 import logger from '../utils/logger';
 import crypto from 'crypto';
+import prisma from '../utils/prisma';
 
 const authService = new AuthService();
 import { rabbitmqService } from '../services/rabbitmq.service';
@@ -55,6 +56,18 @@ export class AuthController {
         rabbitmqService.publishDeviceRegistered(data.user.id, validatedData.fcmToken);
       }
       
+      if (data.user) {
+        const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown';
+        await prisma.activityLog.create({
+            data: {
+                userId: data.user.id,
+                action: 'LOGIN',
+                detail: 'Acceso a la plataforma',
+                ipAddress: Array.isArray(ip) ? ip[0] : ip
+            }
+        });
+      }
+
       res.status(200).json(data);
     } catch (error: any) {
       if (error instanceof z.ZodError) {
@@ -72,6 +85,18 @@ export class AuthController {
 
       if (validatedData.fcmToken && data.user) {
         rabbitmqService.publishDeviceRegistered(data.user.id, validatedData.fcmToken);
+      }
+
+      if (data.user) {
+        const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown';
+        await prisma.activityLog.create({
+            data: {
+                userId: data.user.id,
+                action: 'LOGIN',
+                detail: 'Acceso a la plataforma vía Google',
+                ipAddress: Array.isArray(ip) ? ip[0] : ip
+            }
+        });
       }
 
       res.status(200).json(data);
