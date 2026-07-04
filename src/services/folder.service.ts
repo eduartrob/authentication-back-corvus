@@ -2,16 +2,12 @@ import prisma from '../utils/prisma';
 
 export class FolderService {
     static async addFolder(userId: string, folderId: string, folderName: string) {
-        // Verificar si la carpeta ya existe globalmente o solo para este usuario
-        // Según los requerimientos, vamos a verificar si ya está registrada globalmente 
-        // para no procesarla de nuevo, pero la asociaremos a quien la vincule
+        // -# para no procesarla de nuevo pero la asociaremos a quien la vincule
         const existingFolder = await prisma.linkedFolder.findUnique({
             where: { folder_id: folderId }
         });
 
         if (existingFolder) {
-            // Si ya existe, podemos omitir crearla, o actualizar el userId (en caso de que sea compartida)
-            // Por simplicidad del MVP, diremos que ya existe
             return {
                 isNew: false,
                 folder: existingFolder

@@ -34,6 +34,8 @@ model User {
   google_access_token  String? @db.Text
 
   linked_folders  LinkedFolder[]
+  llm_sessions    LlmSession[]
+  activity_logs   ActivityLog[]
   
   createdAt       DateTime @default(now()) @map("created_at")
   updatedAt       DateTime @updatedAt @map("updated_at")
@@ -52,4 +54,41 @@ model LinkedFolder {
   updatedAt   DateTime @updatedAt @map("updated_at")
 
   @@map("linked_folders")
+}
+
+model LlmSession {
+  id              String   @id @default(uuid()) @db.Uuid
+  userId          String   @db.Uuid
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Datos del análisis que originó la sesión
+  proposal_title  String?
+  verdict         String   // 'approved' | 'rejected'
+  analysis_json   Json     // Snapshot completo del JSON de analyze-proposal
+
+  // Historial de mensajes de la conversación
+  messages        Json     @default("[]") // [{role, content, timestamp}]
+
+  // Control de cuota freemium
+  session_number  Int      @default(1)    // Número de sesión del usuario (1, 2, 3...)
+  is_active       Boolean  @default(true)
+
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@map("llm_sessions")
+}
+
+model ActivityLog {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String?  @db.Uuid
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  
+  action    String   // 'LOGIN', 'UPLOAD_DOCUMENT', 'VALIDATE_CLUSTER', 'SYSTEM_ALERT'
+  detail    String   @db.Text
+  ipAddress String?  @db.VarChar(45) // Support IPv6
+  
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("activity_logs")
 }

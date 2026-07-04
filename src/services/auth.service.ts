@@ -7,20 +7,20 @@ import logger from '../utils/logger';
 const googleClient = new OAuth2Client(
   process.env.GOOGLE_CLIENT_ID,
   process.env.GOOGLE_CLIENT_SECRET,
-  '' // Usar string vacío para serverAuthCodes generados desde Android/iOS
+  ''
 );
 export class AuthService {
   async register(data: any) {
     try {
       const { email, password, roleName, username, fullName, profilePicture } = data;
 
-      // Find or create role
+      // -# find or create role
       let role = await prisma.role.findUnique({ where: { name: roleName } });
       if (!role) {
         role = await prisma.role.create({ data: { name: roleName } });
       }
 
-      // Check if user exists
+      // -# check if user exists
       const existingUser = await prisma.user.findUnique({ where: { email } });
       if (existingUser) {
         throw new Error('User already exists');
@@ -84,20 +84,20 @@ export class AuthService {
       let accessToken = null;
 
       if (process.env.NODE_ENV === 'development' && !process.env.GOOGLE_CLIENT_ID) {
-        // MOCK PARA DESARROLLO
-        const decoded: any = jwt.decode(authCode); // asumiendo que en dev mandan un jwt falso
+        // -# mock para desarrollo
+        const decoded: any = jwt.decode(authCode);
         if (!decoded || !decoded.email) throw new Error('Token inválido en desarrollo');
         email = decoded.email;
         fullName = decoded.name || '';
         profilePicture = decoded.picture || '';
       } else {
-        // 1. Intercambiar el authCode por tokens (Access Token y Refresh Token)
+        // -# 1 intercambiar el authcode por tokens access token y refresh token
         const { tokens } = await googleClient.getToken(authCode);
         
         refreshToken = tokens.refresh_token || null;
         accessToken = tokens.access_token || null;
 
-        // 2. Extraer la identidad del id_token que viene en la respuesta
+        // -# 2 extraer la identidad del idtoken que viene en la respuesta
         const ticket = await googleClient.verifyIdToken({
           idToken: tokens.id_token!,
           audience: process.env.GOOGLE_CLIENT_ID,
@@ -114,33 +114,40 @@ export class AuthService {
         profilePicture = payload.picture || '';
       }
 
-      // Validar el dominio del correo institucional
+      // -# validar el dominio del correo institucional o las cuentas especificas de pruebas de google
       let roleName = '';
-      if (email === 'eduartrob2@gmail.com') {
-        roleName = 'PROFESOR'; // 🔥 EXCEPCIÓN PARA PRUEBAS 🔥
-      } else if (email.endsWith('@ids.upchiapas.edu.mx')) {
-        roleName = 'ALUMNO';
-      } else if (email.endsWith('@upchiapas.edu.mx')) {
+      const emailLower = email.toLowerCase();
+      
+      if (
+        emailLower === 'eduartrob2@gmail.com' ||
+        emailLower === 'testerprofesores713@gmail.com' ||
+        emailLower.endsWith('@upchiapas.edu.mx')
+      ) {
         roleName = 'PROFESOR';
+      } else if (
+        emailLower === 'testeralumnos@gmail.com' ||
+        emailLower === 'eduartrob3@gmail.com' ||
+        emailLower.endsWith('@ids.upchiapas.edu.mx')
+      ) {
+        roleName = 'ALUMNO';
       } else {
         throw new Error('Dominio de correo no permitido. Solo se aceptan correos institucionales de la universidad.');
       }
 
-      // Buscar si el rol existe, si no crearlo
+      // -# buscar si el rol existe si no crearlo
       let role = await prisma.role.findUnique({ where: { name: roleName } });
       if (!role) {
         role = await prisma.role.create({ data: { name: roleName } });
       }
 
-      // Buscar al usuario
+      // -# buscar al usuario
       let user = await prisma.user.findUnique({
         where: { email },
         include: { role: true },
       });
 
-      // Si no existe, lo registramos automáticamente
       if (!user) {
-        // Generamos un password aleatorio seguro ya que entrará solo por Google Auth
+        // -# generamos un password aleatorio seguro ya que entrara solo por google auth
         const randomPassword = Math.random().toString(36).slice(-10) + Math.random().toString(36).slice(-10);
         const hashedPassword = await bcrypt.hash(randomPassword, 10);
 
@@ -155,9 +162,6 @@ export class AuthService {
           include: { role: true }
         });
       } else {
-        // Si ya existe pero cambió de foto o nombre en Google, actualizamos
-        // IMPORTANTE: Solo actualizamos el refresh_token si Google nos manda uno nuevo.
-        // Si manda null, conservamos el que ya teníamos en la BD.
         user = await prisma.user.update({
           where: { email },
           data: {
@@ -168,7 +172,7 @@ export class AuthService {
         });
       }
 
-      // Generar JWT de nuestra aplicación
+      // -# generar jwt de nuestra aplicacion
       const token = jwt.sign(
         { id: user.id, role: user.role.name },
         process.env.JWT_SECRET || 'secret',

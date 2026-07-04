@@ -4,7 +4,7 @@ import { FolderService } from '../services/folder.service';
 export const addFolder = async (req: Request, res: Response) => {
     try {
         const { folder_id, folder_name } = req.body;
-        // Obtenemos userId del middleware de auth
+        // -# obtenemos userid del middleware de auth
         const userId = (req as any).user?.userId || (req as any).user?.id;
 
         if (!userId) {

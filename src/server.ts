@@ -10,11 +10,9 @@ const PORT = process.env.PORT || 3000;
 
 async function bootstrap() {
   try {
-    // Validar conexión a la BD
     await prisma.$connect();
     logger.info('Connected to the database successfully.');
 
-    // Conectar a RabbitMQ
     await rabbitmqService.connect();
 
     app.listen(PORT, () => {

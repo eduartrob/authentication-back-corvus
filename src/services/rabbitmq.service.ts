@@ -12,7 +12,6 @@ class RabbitMQService {
       this.connection = (await amqp.connect(this.URL)) as any;
       this.channel = await (this.connection as any).createChannel();
       
-      // Aseguramos que el Exchange exista
       await this.channel.assertExchange(this.EXCHANGE, 'topic', { durable: true });
       console.log('✅ Conectado a RabbitMQ (Autenticación)');
     } catch (error) {
@@ -21,7 +20,6 @@ class RabbitMQService {
     }
   }
 
-  // Enviar evento de registro de dispositivo (Login)
   async publishDeviceRegistered(userId: string, fcmToken: string) {
     if (!this.channel) return;
     const payload = { userId, fcmToken, timestamp: new Date() };
@@ -33,7 +31,6 @@ class RabbitMQService {
     console.log(`📤 Evento publicado: auth.device.registered para User ${userId}`);
   }
 
-  // Enviar evento de eliminación de dispositivo (Logout)
   async publishDeviceUnregistered(userId: string, fcmToken: string) {
     if (!this.channel) return;
     const payload = { userId, fcmToken, timestamp: new Date() };
@@ -45,7 +42,6 @@ class RabbitMQService {
     console.log(`📤 Evento publicado: auth.device.unregistered para User ${userId}`);
   }
 
-  // Enviar evento de recuperacion de password
   async publishPasswordRecovery(userId: string, email: string, token: string) {
     if (!this.channel) return;
     const payload = { userId, email, recovery_token: token, timestamp: new Date() };
