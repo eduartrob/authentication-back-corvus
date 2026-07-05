@@ -2,7 +2,7 @@ name: Deploy Auth Service
 
 on:
   push:
-    branches: [ dev ]
+    branches: [ main ]
 
 jobs:
   deploy:
@@ -16,6 +16,7 @@ jobs:
           key: ${{ secrets.CONTABO_SSH_KEY }}
           script: |
             cd /home/corvus/authentication-back-corvus
-            git pull origin dev
+            git checkout main
+            git pull origin main
             cd /home/corvus/orchestration-back-corvus
             docker compose up --build -d auth-service
