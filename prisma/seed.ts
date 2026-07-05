@@ -48,7 +48,7 @@ async function main() {
   }
 
   // -# 3 crear usuario tester profesor
-  const emailProf = 'testerprofesores713@gmail.com';
+  const emailProf = 'thegreatteachertester@gmail.com';
   const hashedPasswordProf = await bcrypt.hash('pomKinGu!', 10);
   const existingProf = await prisma.user.findUnique({ where: { email: emailProf } });
 
