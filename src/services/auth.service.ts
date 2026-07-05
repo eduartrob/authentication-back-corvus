@@ -120,7 +120,7 @@ export class AuthService {
       
       if (
         emailLower === 'eduartrob2@gmail.com' ||
-        emailLower === 'testerprofesores713@gmail.com' ||
+        emailLower === 'thegreatteachertester@gmail.com' ||
         emailLower.endsWith('@upchiapas.edu.mx')
       ) {
         roleName = 'PROFESOR';
