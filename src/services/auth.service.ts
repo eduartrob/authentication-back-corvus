@@ -157,7 +157,9 @@ export class AuthService {
             password_hash: hashedPassword,
             roleId: role.id,
             full_name: fullName || null,
-            profile_picture: profilePicture || null
+            profile_picture: profilePicture || null,
+            google_access_token: accessToken,
+            google_refresh_token: refreshToken
           },
           include: { role: true }
         });
@@ -166,7 +168,9 @@ export class AuthService {
           where: { email },
           data: {
             full_name: fullName || user.full_name,
-            profile_picture: profilePicture || user.profile_picture
+            profile_picture: profilePicture || user.profile_picture,
+            google_access_token: accessToken || user.google_access_token,
+            google_refresh_token: refreshToken || user.google_refresh_token
           },
           include: { role: true }
         });
