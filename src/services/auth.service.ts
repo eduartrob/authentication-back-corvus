@@ -157,17 +157,25 @@ export class AuthService {
             password_hash: hashedPassword,
             roleId: role.id,
             full_name: fullName || null,
-            profile_picture: profilePicture || null
+            profile_picture: profilePicture || null,
+            google_access_token: accessToken,
+            google_refresh_token: refreshToken
           },
           include: { role: true }
         });
       } else {
+        const updateData: any = {
+          full_name: fullName || user.full_name,
+          profile_picture: profilePicture || user.profile_picture,
+          google_access_token: accessToken || user.google_access_token
+        };
+        if (refreshToken) {
+          updateData.google_refresh_token = refreshToken;
+        }
+
         user = await prisma.user.update({
           where: { email },
-          data: {
-            full_name: fullName || user.full_name,
-            profile_picture: profilePicture || user.profile_picture
-          },
+          data: updateData,
           include: { role: true }
         });
       }
