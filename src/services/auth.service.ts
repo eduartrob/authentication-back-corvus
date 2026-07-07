@@ -164,14 +164,18 @@ export class AuthService {
           include: { role: true }
         });
       } else {
+        const updateData: any = {
+          full_name: fullName || user.full_name,
+          profile_picture: profilePicture || user.profile_picture,
+          google_access_token: accessToken || user.google_access_token
+        };
+        if (refreshToken) {
+          updateData.google_refresh_token = refreshToken;
+        }
+
         user = await prisma.user.update({
           where: { email },
-          data: {
-            full_name: fullName || user.full_name,
-            profile_picture: profilePicture || user.profile_picture,
-            google_access_token: accessToken || user.google_access_token,
-            google_refresh_token: refreshToken || user.google_refresh_token
-          },
+          data: updateData,
           include: { role: true }
         });
       }
