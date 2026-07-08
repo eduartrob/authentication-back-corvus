@@ -1,0 +1,117 @@
+import { Request, Response, NextFunction } from 'express';
+import prisma from '../utils/prisma';
+
+export const resolveCareer = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { careerName } = req.body;
+    
+    if (!careerName || typeof careerName !== 'string') {
+      res.status(400).json({ message: 'El nombre de la carrera es requerido' });
+      return;
+    }
+
+    const normalizedName = careerName.toLowerCase().trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+
+    // Intentar buscar la carrera de forma exacta o semántica (usando similaridad básica por ahora)
+    let career = await prisma.career.findFirst({
+      where: {
+        normalized_name: {
+          equals: normalizedName
+        }
+      },
+      include: {
+        career_skills: {
+          include: {
+            skill: true
+          }
+        }
+      }
+    });
+
+    if (!career) {
+      // Buscar con similitud usando contains
+      career = await prisma.career.findFirst({
+        where: {
+          normalized_name: {
+            contains: normalizedName
+          }
+        },
+        include: {
+          career_skills: {
+            include: {
+              skill: true
+            }
+          }
+        }
+      });
+    }
+
+    if (career) {
+      // Si la encontró, retornamos la carrera y sus habilidades formateadas
+      const skills = career.career_skills.map((cs: any) => cs.skill.name);
+      res.status(200).json({ career, skills });
+      return;
+    }
+
+    // Si NO se encontró, pedimos las habilidades al microservicio llm-back-corvus
+    console.log(`🧠 Carrera "${careerName}" no encontrada. Llamando a llm-back-corvus...`);
+    
+    let generatedSkills: string[] = [];
+    try {
+      const llmUrl = process.env.LLM_URL || 'http://localhost:3003';
+      const response = await fetch(`${llmUrl}/api/v1/llm/generate-career-skills`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ career_name: careerName, provider: "groq" })
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        if (data.skills && Array.isArray(data.skills)) {
+          generatedSkills = data.skills;
+        }
+      } else {
+        console.error("Error from llm-back-corvus:", await response.text());
+      }
+    } catch (e) {
+      console.error("Error al llamar a llm-back-corvus:", e);
+    }
+
+    // Asegurarse de tener elementos
+    if (generatedSkills.length === 0) {
+      generatedSkills = ["Resolución de problemas", "Trabajo en equipo", "Comunicación", "Liderazgo", "Pensamiento crítico"];
+    }
+
+    // Guardar en la DB (Carrera y Skills)
+    const newCareer = await prisma.career.create({
+      data: {
+        name: careerName,
+        normalized_name: normalizedName
+      }
+    });
+
+    // Crear/buscar habilidades y asociarlas
+    for (const skillName of generatedSkills) {
+      // Ignorar si el string es muy largo
+      if (typeof skillName !== 'string' || skillName.length > 50) continue;
+      
+      let skill = await prisma.skill.findUnique({ where: { name: skillName.trim() } });
+      if (!skill) {
+        skill = await prisma.skill.create({ data: { name: skillName.trim() } });
+      }
+
+      await prisma.careerSkill.create({
+        data: {
+          careerId: newCareer.id,
+          skillId: skill.id
+        }
+      });
+    }
+
+    // Retornar la nueva carrera y sus habilidades
+    res.status(200).json({ career: newCareer, skills: generatedSkills });
+    
+  } catch (error) {
+    next(error);
+  }
+};

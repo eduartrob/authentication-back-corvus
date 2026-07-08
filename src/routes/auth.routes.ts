@@ -11,5 +11,7 @@ router.post('/google', authController.googleLogin);
 router.post('/logout', authenticateJWT, authController.logout);
 router.post('/recover-password', authController.recoverPassword);
 router.get('/me', authenticateJWT, authController.me);
+router.put('/complete-student-profile', authenticateJWT, authController.completeStudentProfile);
+router.put('/profile-picture', authenticateJWT, authController.updateProfilePicture);
 
 export default router;

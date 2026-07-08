@@ -6,10 +6,12 @@
 
 generator client {
   provider = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
 }
 
 datasource db {
   provider = "postgresql"
+  extensions = [pg_trgm]
 }
 
 model Role {
@@ -26,9 +28,18 @@ model User {
   username        String?  @unique // Principalmente para ADMIN
   password_hash   String
   full_name       String?  // Para ALUMNO y PROFESOR
+  enrollment_id   String?  @unique // Matrícula
   profile_picture String?  // Para ALUMNO y PROFESOR
   roleId          Int
   role            Role     @relation(fields: [roleId], references: [id])
+  
+  universityId    String?  @db.Uuid
+  university      University? @relation(fields: [universityId], references: [id])
+  
+  careerId        String?  @db.Uuid
+  career          Career?  @relation(fields: [careerId], references: [id])
+  
+  user_skills     UserSkill[]
   
   google_refresh_token String? @db.Text
   google_access_token  String? @db.Text
@@ -41,6 +52,61 @@ model User {
   updatedAt       DateTime @updatedAt @map("updated_at")
 
   @@map("users")
+}
+
+model University {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String   @unique
+  acronym   String?
+  
+  users     User[]
+
+  @@map("universities")
+}
+
+model Career {
+  id              String   @id @default(uuid()) @db.Uuid
+  name            String   @unique
+  normalized_name String   @unique // For efficient similarity search
+  
+  users           User[]
+  career_skills   CareerSkill[]
+
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  @@map("careers")
+}
+
+model Skill {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String   @unique
+
+  career_skills CareerSkill[]
+  user_skills   UserSkill[]
+
+  @@map("skills")
+}
+
+model CareerSkill {
+  careerId String @db.Uuid
+  skillId  String @db.Uuid
+
+  career   Career @relation(fields: [careerId], references: [id], onDelete: Cascade)
+  skill    Skill  @relation(fields: [skillId], references: [id], onDelete: Cascade)
+
+  @@id([careerId, skillId])
+  @@map("career_skills")
+}
+
+model UserSkill {
+  userId  String @db.Uuid
+  skillId String @db.Uuid
+
+  user    User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  skill   Skill @relation(fields: [skillId], references: [id], onDelete: Cascade)
+
+  @@id([userId, skillId])
+  @@map("user_skills")
 }
 
 model LinkedFolder {
