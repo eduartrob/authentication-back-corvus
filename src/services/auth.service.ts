@@ -68,7 +68,16 @@ export class AuthService {
         { expiresIn: (process.env.JWT_EXPIRES_IN || '1d') as any }
       );
 
-      return { token, user: { id: user.id, email: user.email, role: user.role.name } };
+      return { 
+        token, 
+        user: { 
+          id: user.id, 
+          email: user.email, 
+          role: user.role.name,
+          name: user.full_name,
+          photoUrl: user.profile_picture
+        } 
+      };
     } catch (error) {
       logger.error('Error in AuthService.login', error);
       throw error;
@@ -189,12 +198,68 @@ export class AuthService {
           id: user.id, 
           email: user.email, 
           role: user.role.name, 
-          fullName: user.full_name, 
-          profilePicture: user.profile_picture 
+          name: user.full_name, 
+          photoUrl: user.profile_picture 
         } 
       };
     } catch (error) {
       logger.error('Error in AuthService.googleLogin', error);
+      throw error;
+    }
+  }
+
+  async getCompleteProfile(userId: string) {
+    try {
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        include: {
+          university: true,
+          career: true,
+          user_skills: {
+            include: {
+              skill: true
+            }
+          }
+        }
+      });
+
+      if (!user) {
+        throw new Error('User not found');
+      }
+
+      const habilidades = user.user_skills.map((us) => ({
+        habilidad: us.skill.name,
+        nivel: "Intermedio",
+        porcentaje: 100,
+        materias: []
+      }));
+
+      return {
+        status: "completed",
+        alumno: user.full_name || user.email,
+        correo: user.email,
+        universidad: user.university?.name || null,
+        carrera: user.career?.name || null,
+        cuatrimestre: user.semester,
+        matricula: user.enrollment_id,
+        is_verified: user.is_verified,
+        tiempo_ejecucion: "0.0s",
+        resumen: {
+            total_materias: 0,
+            materias_relevantes: 0,
+            total_tareas: 0,
+            total_pdfs_en_drive: 0,
+            pdfs_analizados: 0,
+            documentos_con_ia: 0,
+            habilidades_detectadas: habilidades.length,
+        },
+        habilidades: habilidades,
+        materias: [],
+        documentos_con_ia: [],
+      };
+
+    } catch (error) {
+      logger.error('Error in AuthService.getCompleteProfile', error);
       throw error;
     }
   }

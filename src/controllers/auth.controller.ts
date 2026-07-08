@@ -4,6 +4,10 @@ import { z } from 'zod';
 import logger from '../utils/logger';
 import crypto from 'crypto';
 import prisma from '../utils/prisma';
+import bcrypt from 'bcrypt';
+import jwt from 'jsonwebtoken';
+import { generateTokens } from '../utils/jwt';
+import { normalizeUniversity, normalizeCareer } from '../utils/normalizer';
 
 const authService = new AuthService();
 import { rabbitmqService } from '../services/rabbitmq.service';
@@ -110,7 +114,42 @@ export class AuthController {
   }
 
   async me(req: Request, res: Response) {
-      res.status(200).json({ user: (req as any).user });
+      try {
+          const user = (req as any).user;
+          const fullUser = await prisma.user.findUnique({
+              where: { id: user.id },
+              include: { role: true }
+          });
+          if (!fullUser) {
+              res.status(404).json({ error: 'User not found' });
+              return;
+          }
+          res.status(200).json({ 
+              user: {
+                  id: fullUser.id,
+                  email: fullUser.email,
+                  name: fullUser.full_name,
+                  photoUrl: fullUser.profile_picture,
+                  role: fullUser.role.name
+              }
+          });
+      } catch (error: any) {
+          res.status(500).json({ error: error.message });
+      }
+  }
+
+  async getCompleteProfile(req: Request, res: Response) {
+    try {
+      const user = (req as any).user;
+      if (!user || !user.id) {
+        res.status(401).json({ error: 'Unauthorized' });
+        return;
+      }
+      const profile = await authService.getCompleteProfile(user.id);
+      res.status(200).json(profile);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
   }
 
   async logout(req: Request, res: Response) {
@@ -163,12 +202,13 @@ export class AuthController {
 
       // Resolver ID de Universidad por nombre (o crearla)
       if (university_id && !university_id.includes('-')) {
+        const normUniv = normalizeUniversity(university_id);
         let uni = await prisma.university.findFirst({
-          where: { name: { equals: university_id, mode: 'insensitive' } }
+          where: { name: { equals: normUniv, mode: 'insensitive' } }
         });
         if (!uni) {
           uni = await prisma.university.create({
-            data: { name: university_id }
+            data: { name: normUniv }
           });
         }
         finalUniversityId = uni.id;
@@ -176,12 +216,13 @@ export class AuthController {
 
       // Resolver ID de Carrera por nombre
       if (career_id && !career_id.includes('-')) {
+        const normCareer = normalizeCareer(career_id);
         let car = await prisma.career.findFirst({
-          where: { name: { equals: career_id, mode: 'insensitive' } }
+          where: { name: { equals: normCareer, mode: 'insensitive' } }
         });
         if (!car) {
           car = await prisma.career.create({
-            data: { name: career_id, normalized_name: career_id.toLowerCase().trim() }
+            data: { name: normCareer, normalized_name: normCareer.toLowerCase().trim() }
           });
         }
         finalCareerId = car.id;
@@ -276,6 +317,135 @@ export class AuthController {
       });
 
       res.status(200).json({ message: 'Profile picture updated', profile_picture: result.secure_url });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  }
+
+  async updateProfile(req: Request, res: Response) {
+    try {
+      const user = (req as any).user;
+      if (!user) {
+        res.status(401).json({ error: 'No autorizado' });
+        return;
+      }
+
+      const { full_name, enrollment_id, semester, skills } = req.body;
+
+      // Actualizar el usuario
+      const updatedUser = await prisma.user.update({
+        where: { id: user.id },
+        data: {
+          full_name,
+          enrollment_id,
+          semester: semester ? String(semester) : null,
+        },
+      });
+
+      // Actualizar skills
+      if (skills && Array.isArray(skills)) {
+        await prisma.userSkill.deleteMany({
+          where: { userId: user.id },
+        });
+
+        const skillRecords = await prisma.skill.findMany({
+          where: {
+            name: {
+              in: skills,
+            },
+          },
+        });
+
+        for (const skill of skillRecords) {
+          await prisma.userSkill.create({
+            data: {
+              userId: user.id,
+              skillId: skill.id,
+            },
+          });
+        }
+        
+        // Publicar evento a RabbitMQ para que otros servicios se sincronicen
+        const { rabbitmqService } = require('../services/rabbitmq.service');
+        await rabbitmqService.publishProfileUpdated(user.id, { skills });
+      }
+
+      res.status(200).json({ message: 'Perfil actualizado exitosamente', user: updatedUser });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  }
+
+  async requestEmailVerification(req: Request, res: Response) {
+    try {
+      const user = (req as any).user;
+      if (!user) {
+        res.status(401).json({ error: 'No autorizado' });
+        return;
+      }
+
+      // Generate a 6-digit random code
+      const pin = Math.floor(100000 + Math.random() * 900000).toString();
+      
+      // Set expiration to 15 minutes from now
+      const expiresAt = new Date();
+      expiresAt.setMinutes(expiresAt.getMinutes() + 15);
+
+      await prisma.user.update({
+        where: { id: user.id },
+        data: {
+          verification_code: pin,
+          verification_expires_at: expiresAt,
+        },
+      });
+
+      const { rabbitmqService } = require('../services/rabbitmq.service');
+      await rabbitmqService.publishEmailVerification(user.id, user.email, pin);
+
+      res.status(200).json({ message: 'Código de verificación enviado' });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  }
+
+  async confirmEmailVerification(req: Request, res: Response) {
+    try {
+      const user = (req as any).user;
+      if (!user) {
+        res.status(401).json({ error: 'No autorizado' });
+        return;
+      }
+
+      const { code } = req.body;
+      if (!code) {
+        res.status(400).json({ error: 'Código no proporcionado' });
+        return;
+      }
+
+      const dbUser = await prisma.user.findUnique({
+        where: { id: user.id },
+      });
+
+      if (!dbUser || dbUser.verification_code !== code) {
+        res.status(400).json({ error: 'Código incorrecto' });
+        return;
+      }
+
+      if (dbUser.verification_expires_at && new Date() > dbUser.verification_expires_at) {
+        res.status(400).json({ error: 'El código ha expirado' });
+        return;
+      }
+
+      await prisma.user.update({
+        where: { id: user.id },
+        data: {
+          is_verified: true,
+          verification_code: null,
+          verification_expires_at: null,
+        },
+      });
+
+      res.status(200).json({ message: 'Correo verificado exitosamente' });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
