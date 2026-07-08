@@ -181,7 +181,7 @@ export class AuthController {
         });
         if (!car) {
           car = await prisma.career.create({
-            data: { name: career_id }
+            data: { name: career_id, normalized_name: career_id.toLowerCase().trim() }
           });
         }
         finalCareerId = car.id;
