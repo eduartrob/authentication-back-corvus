@@ -6,7 +6,7 @@ import crypto from 'crypto';
 import prisma from '../utils/prisma';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
-import { generateTokens } from '../utils/jwt';
+
 import { normalizeUniversity, normalizeCareer } from '../utils/normalizer';
 
 const authService = new AuthService();
