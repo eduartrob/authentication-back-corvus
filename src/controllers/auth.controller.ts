@@ -156,7 +156,7 @@ export class AuthController {
         return;
       }
 
-      const { full_name, enrollment_id, university_id, career_id, skills } = req.body;
+      const { full_name, enrollment_id, university_id, career_id, period_number, skills } = req.body;
 
       let finalUniversityId = university_id;
       let finalCareerId = career_id;
@@ -187,7 +187,7 @@ export class AuthController {
         finalCareerId = car.id;
       }
 
-      // Actualizar el usuario con nombre, matricula, universidad y carrera
+      // Actualizar el usuario con nombre, matricula, universidad, carrera y cuatrimestre
       const updatedUser = await prisma.user.update({
         where: { id: user.id },
         data: {
@@ -195,6 +195,7 @@ export class AuthController {
           enrollment_id,
           universityId: finalUniversityId,
           careerId: finalCareerId,
+          semester: period_number ? String(period_number) : null,
         },
       });
 
@@ -279,4 +280,30 @@ export class AuthController {
       res.status(500).json({ error: error.message });
     }
   }
+
+  async deleteAccount(req: Request, res: Response) {
+    try {
+      const user = (req as any).user;
+      if (!user) {
+        res.status(401).json({ error: 'No autorizado' });
+        return;
+      }
+
+      // La eliminación en cascada de Prisma se encargará de borrar:
+      // - user_skills
+      // - linked_folders
+      // - llm_sessions
+      // - requests (a través de la DB si es que está configurado cascade)
+      // Y establecerá en NULL el userId en activity_logs
+      
+      await prisma.user.delete({
+        where: { id: user.id },
+      });
+
+      res.status(200).json({ message: 'Cuenta eliminada exitosamente. Tu historial ha sido anonimizado.' });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  }
 }
+
