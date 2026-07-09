@@ -1,3 +1,6 @@
+## [1.2.13] - 2026-07-09
+- Preparación para nueva arquitectura de Proyectos Integradores.
+
 # Changelog
 All notable changes to this project will be documented in this file.
 
