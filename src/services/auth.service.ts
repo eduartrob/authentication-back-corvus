@@ -156,24 +156,7 @@ export class AuthService {
       });
 
       if (!user) {
-        // -# generamos un password aleatorio seguro ya que entrara solo por google auth
-        const randomPassword = Math.random().toString(36).slice(-10) + Math.random().toString(36).slice(-10);
-        const hashedPassword = await bcrypt.hash(randomPassword, 10);
-
-        user = await prisma.user.create({
-          data: {
-            email,
-            password_hash: hashedPassword,
-            roleId: role.id,
-            full_name: fullName || null,
-            profile_picture: profilePicture || null,
-            google_access_token: accessToken,
-            google_refresh_token: refreshToken,
-            google_email: email,
-            is_verified: true
-          },
-          include: { role: true }
-        });
+        throw new Error('Esta cuenta de Google no está registrada. Por favor, ve a la sección de Registro para crear tu cuenta.');
       } else {
         user = await prisma.user.update({
           where: { email },
