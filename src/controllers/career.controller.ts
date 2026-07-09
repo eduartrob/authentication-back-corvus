@@ -8,8 +8,7 @@ export const getCareers = async (req: Request, res: Response, next: NextFunction
     
     let queryArgs: any = {
       orderBy: { name: 'asc' },
-      where: {},
-      take: 30
+      where: {}
     };
 
     if (universityId) {
