@@ -168,7 +168,9 @@ export class AuthService {
             full_name: fullName || null,
             profile_picture: profilePicture || null,
             google_access_token: accessToken,
-            google_refresh_token: refreshToken
+            google_refresh_token: refreshToken,
+            google_email: email,
+            is_verified: true
           },
           include: { role: true }
         });
@@ -277,12 +279,14 @@ export class AuthService {
       const updatedUser = await prisma.user.update({
         where: { id: userId },
         data: {
-          email: email,
-          secondary_email: isSameEmail ? currentUser.secondary_email : currentUser.email,
+          secondary_email: isSameEmail ? currentUser.secondary_email : email,
+          secondary_is_verified: isSameEmail ? currentUser.secondary_is_verified : true,
           full_name: fullName || currentUser.full_name,
           profile_picture: profilePicture || currentUser.profile_picture,
           google_access_token: accessToken || currentUser.google_access_token,
-          google_refresh_token: refreshToken || currentUser.google_refresh_token
+          google_refresh_token: refreshToken || currentUser.google_refresh_token,
+          google_email: email,
+          is_verified: isSameEmail ? true : currentUser.is_verified
         }
       });
 
@@ -334,6 +338,8 @@ export class AuthService {
         cuatrimestre: user.semester,
         matricula: user.enrollment_id,
         is_verified: user.is_verified,
+        secondary_is_verified: user.secondary_is_verified,
+        google_email: user.google_email,
         tiempo_ejecucion: "0.0s",
         resumen: {
             total_materias: 0,

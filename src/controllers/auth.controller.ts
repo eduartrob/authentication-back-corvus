@@ -404,6 +404,18 @@ export class AuthController {
         return;
       }
 
+      const { type } = req.body; // 'primary' | 'secondary'
+
+      const dbUser = await prisma.user.findUnique({ where: { id: user.id } });
+      if (!dbUser) return;
+
+      const emailToSend = type === 'secondary' ? dbUser.secondary_email : dbUser.email;
+      
+      if (!emailToSend) {
+        res.status(400).json({ error: 'Correo no encontrado' });
+        return;
+      }
+
       // Generate a 6-digit random code
       const pin = Math.floor(100000 + Math.random() * 900000).toString();
       
@@ -411,7 +423,7 @@ export class AuthController {
       const expiresAt = new Date();
       expiresAt.setMinutes(expiresAt.getMinutes() + 15);
 
-      const updatedUser = await prisma.user.update({
+      await prisma.user.update({
         where: { id: user.id },
         data: {
           verification_code: pin,
@@ -420,8 +432,6 @@ export class AuthController {
       });
 
       const { rabbitmqService } = require('../services/rabbitmq.service');
-      const emailToSend = updatedUser.email || user.email;
-      console.log(`Sending email verification for userId: ${user.id}, emailToSend: ${emailToSend}, updatedUserEmail: ${updatedUser.email}, userEmail: ${user.email}`);
       await rabbitmqService.publishEmailVerification(user.id, emailToSend, pin);
 
       res.status(200).json({ message: 'Código de verificación enviado' });
@@ -438,7 +448,7 @@ export class AuthController {
         return;
       }
 
-      const { code } = req.body;
+      const { code, type } = req.body;
       if (!code) {
         res.status(400).json({ error: 'Código no proporcionado' });
         return;
@@ -458,16 +468,105 @@ export class AuthController {
         return;
       }
 
+      const isSecondary = type === 'secondary';
+
       await prisma.user.update({
         where: { id: user.id },
         data: {
-          is_verified: true,
+          is_verified: isSecondary ? dbUser.is_verified : true,
+          secondary_is_verified: isSecondary ? true : dbUser.secondary_is_verified,
           verification_code: null,
           verification_expires_at: null,
         },
       });
 
       res.status(200).json({ message: 'Correo verificado exitosamente' });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  }
+
+  async addSecondaryEmail(req: Request, res: Response) {
+    try {
+      const user = (req as any).user;
+      if (!user) return res.status(401).json({ error: 'No autorizado' });
+
+      const { email } = req.body;
+      if (!email) return res.status(400).json({ error: 'Falta correo electrónico' });
+
+      // Verificar si el correo ya existe
+      const existing = await prisma.user.findFirst({
+        where: { OR: [{ email: email }, { secondary_email: email }] }
+      });
+
+      if (existing && existing.id !== user.id) {
+        return res.status(400).json({ error: 'Este correo ya está en uso' });
+      }
+
+      await prisma.user.update({
+        where: { id: user.id },
+        data: {
+          secondary_email: email,
+          secondary_is_verified: false,
+        }
+      });
+
+      res.status(200).json({ message: 'Correo secundario agregado exitosamente' });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  }
+
+  async deleteEmail(req: Request, res: Response) {
+    try {
+      const user = (req as any).user;
+      if (!user) return res.status(401).json({ error: 'No autorizado' });
+
+      const { type } = req.body;
+      if (!type || (type !== 'primary' && type !== 'secondary')) {
+        return res.status(400).json({ error: 'Tipo de correo no válido' });
+      }
+
+      const dbUser = await prisma.user.findUnique({ where: { id: user.id } });
+      if (!dbUser) return res.status(404).json({ error: 'Usuario no encontrado' });
+
+      if (!dbUser.secondary_email) {
+        return res.status(400).json({ error: 'No puedes borrar tu único correo.' });
+      }
+
+      let dataToUpdate: any = {};
+
+      if (type === 'primary') {
+        // Mover secundario a primario
+        dataToUpdate.email = dbUser.secondary_email;
+        dataToUpdate.is_verified = dbUser.secondary_is_verified;
+        dataToUpdate.secondary_email = null;
+        dataToUpdate.secondary_is_verified = false;
+        
+        // Si el primario que estamos borrando era el de Google, lo desvinculamos
+        if (dbUser.google_email === dbUser.email) {
+          dataToUpdate.google_email = null;
+          dataToUpdate.google_access_token = null;
+          dataToUpdate.google_refresh_token = null;
+        }
+      } else {
+        dataToUpdate.secondary_email = null;
+        dataToUpdate.secondary_is_verified = false;
+
+        // Si el secundario que estamos borrando era el de Google, lo desvinculamos
+        if (dbUser.google_email === dbUser.secondary_email) {
+          dataToUpdate.google_email = null;
+          dataToUpdate.google_access_token = null;
+          dataToUpdate.google_refresh_token = null;
+        }
+      }
+
+      await prisma.user.update({
+        where: { id: user.id },
+        data: dataToUpdate
+      });
+
+      res.status(200).json({ message: 'Correo borrado exitosamente' });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }

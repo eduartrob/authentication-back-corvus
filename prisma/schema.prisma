@@ -59,6 +59,8 @@ model User {
   is_verified             Boolean   @default(false)
   verification_code       String?
   verification_expires_at DateTime?
+  google_email            String?
+  secondary_is_verified   Boolean   @default(false)
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
