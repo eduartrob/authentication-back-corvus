@@ -208,6 +208,95 @@ export class AuthService {
     }
   }
 
+  async linkGoogleAccount(userId: string, authCode: string) {
+    try {
+      let email = '';
+      let fullName = '';
+      let profilePicture = '';
+      let refreshToken = null;
+      let accessToken = null;
+
+      if (process.env.NODE_ENV === 'development' && !process.env.GOOGLE_CLIENT_ID) {
+        const decoded: any = jwt.decode(authCode);
+        if (!decoded || !decoded.email) throw new Error('Token inválido en desarrollo');
+        email = decoded.email;
+        fullName = decoded.name || '';
+        profilePicture = decoded.picture || '';
+      } else {
+        const { tokens } = await googleClient.getToken(authCode);
+        refreshToken = tokens.refresh_token || null;
+        accessToken = tokens.access_token || null;
+
+        const ticket = await googleClient.verifyIdToken({
+          idToken: tokens.id_token!,
+          audience: process.env.GOOGLE_CLIENT_ID,
+        });
+        
+        const payload = ticket.getPayload();
+        if (!payload || !payload.email) throw new Error('Google token payload inválido');
+
+        email = payload.email;
+        fullName = payload.name || '';
+        profilePicture = payload.picture || '';
+      }
+
+      // Validar el dominio del correo institucional o las cuentas especificas de pruebas
+      let roleName = '';
+      const emailLower = email.toLowerCase();
+      
+      if (
+        emailLower === 'eduartrob2@gmail.com' ||
+        emailLower === 'thegreatteachertester@gmail.com' ||
+        emailLower.endsWith('@upchiapas.edu.mx')
+      ) {
+        roleName = 'PROFESOR';
+      } else if (
+        emailLower === 'testeralumnos@gmail.com' ||
+        emailLower === 'eduartrob3@gmail.com' ||
+        emailLower.endsWith('@ids.upchiapas.edu.mx')
+      ) {
+        roleName = 'ALUMNO';
+      } else {
+        throw new Error('Dominio de correo no permitido. Solo se aceptan correos institucionales de la universidad.');
+      }
+
+      const currentUser = await prisma.user.findUnique({ where: { id: userId } });
+      if (!currentUser) throw new Error('Usuario no encontrado');
+
+      // Check if this google email is already registered to another user
+      if (currentUser.email !== email) {
+        const existingGoogleUser = await prisma.user.findUnique({ where: { email } });
+        if (existingGoogleUser && existingGoogleUser.id !== userId) {
+            throw new Error('Esta cuenta de Google ya está vinculada a otro usuario.');
+        }
+      }
+
+      // Si el correo es el mismo, no usamos secondary_email
+      const isSameEmail = currentUser.email === email;
+
+      const updatedUser = await prisma.user.update({
+        where: { id: userId },
+        data: {
+          email: email,
+          secondary_email: isSameEmail ? currentUser.secondary_email : currentUser.email,
+          full_name: fullName || currentUser.full_name,
+          profile_picture: profilePicture || currentUser.profile_picture,
+          google_access_token: accessToken || currentUser.google_access_token,
+          google_refresh_token: refreshToken || currentUser.google_refresh_token
+        }
+      });
+
+      return {
+        message: 'Cuenta de Google vinculada exitosamente',
+        user: { id: updatedUser.id, email: updatedUser.email }
+      };
+
+    } catch (error) {
+      logger.error('Error in AuthService.linkGoogleAccount', error);
+      throw error;
+    }
+  }
+
   async getCompleteProfile(userId: string) {
     try {
       const user = await prisma.user.findUnique({
@@ -238,6 +327,8 @@ export class AuthService {
         status: "completed",
         alumno: user.full_name || user.email,
         correo: user.email,
+        correo_secundario: user.secondary_email,
+        is_google_linked: user.google_access_token ? true : false,
         universidad: user.university?.name || null,
         carrera: user.career?.name || null,
         cuatrimestre: user.semester,

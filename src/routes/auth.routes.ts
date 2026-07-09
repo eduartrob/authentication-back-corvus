@@ -9,6 +9,7 @@ router.post('/register', authController.register);
 router.post('/login', authController.login);
 router.post('/google', authController.googleLogin);
 router.post('/logout', authenticateJWT, authController.logout);
+router.post('/link-google', authenticateJWT, authController.linkGoogle);
 router.post('/recover-password', authController.recoverPassword);
 router.get('/me', authenticateJWT, authController.me);
 router.get('/profile/complete', authenticateJWT, authController.getCompleteProfile);

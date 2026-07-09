@@ -113,6 +113,26 @@ export class AuthController {
     }
   }
 
+  async linkGoogle(req: Request, res: Response) {
+    try {
+      const user = (req as any).user;
+      if (!user || !user.id) {
+        res.status(401).json({ error: 'Unauthorized' });
+        return;
+      }
+      const validatedData = googleLoginSchema.parse(req.body);
+      const data = await authService.linkGoogleAccount(user.id, validatedData.authCode);
+
+      res.status(200).json(data);
+    } catch (error: any) {
+      if (error instanceof z.ZodError) {
+         res.status(400).json({ error: (error as any).errors });
+         return;
+      }
+      res.status(400).json({ error: error.message });
+    }
+  }
+
   async me(req: Request, res: Response) {
       try {
           const user = (req as any).user;
@@ -391,7 +411,7 @@ export class AuthController {
       const expiresAt = new Date();
       expiresAt.setMinutes(expiresAt.getMinutes() + 15);
 
-      await prisma.user.update({
+      const updatedUser = await prisma.user.update({
         where: { id: user.id },
         data: {
           verification_code: pin,
@@ -400,7 +420,9 @@ export class AuthController {
       });
 
       const { rabbitmqService } = require('../services/rabbitmq.service');
-      await rabbitmqService.publishEmailVerification(user.id, user.email, pin);
+      const emailToSend = updatedUser.email || user.email;
+      console.log(`Sending email verification for userId: ${user.id}, emailToSend: ${emailToSend}, updatedUserEmail: ${updatedUser.email}, userEmail: ${user.email}`);
+      await rabbitmqService.publishEmailVerification(user.id, emailToSend, pin);
 
       res.status(200).json({ message: 'Código de verificación enviado' });
     } catch (error: any) {

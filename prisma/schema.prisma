@@ -25,6 +25,7 @@ model Role {
 model User {
   id              String  @id @default(uuid()) @db.Uuid
   email           String  @unique
+  secondary_email String? @unique
   username        String? @unique // Principalmente para ADMIN
   password_hash   String
   full_name       String? // Para ALUMNO y PROFESOR
