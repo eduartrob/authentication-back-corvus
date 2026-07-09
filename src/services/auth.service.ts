@@ -178,8 +178,8 @@ export class AuthService {
         user = await prisma.user.update({
           where: { email },
           data: {
-            full_name: fullName || user.full_name,
-            profile_picture: profilePicture || user.profile_picture,
+            full_name: user.full_name || fullName,
+            profile_picture: user.profile_picture || profilePicture,
             google_access_token: accessToken || user.google_access_token,
             google_refresh_token: refreshToken || user.google_refresh_token
           },
@@ -281,8 +281,8 @@ export class AuthService {
         data: {
           secondary_email: isSameEmail ? currentUser.secondary_email : email,
           secondary_is_verified: isSameEmail ? currentUser.secondary_is_verified : true,
-          full_name: fullName || currentUser.full_name,
-          profile_picture: profilePicture || currentUser.profile_picture,
+          full_name: currentUser.full_name || fullName,
+          profile_picture: currentUser.profile_picture || profilePicture,
           google_access_token: accessToken || currentUser.google_access_token,
           google_refresh_token: refreshToken || currentUser.google_refresh_token,
           google_email: email,
