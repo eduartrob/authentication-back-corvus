@@ -179,6 +179,18 @@ async function main() {
 
   // -# 8 Seeding Universidades y Carreras desde RENOES
   console.log('🏫 Iniciando seeding de universidades y carreras...');
+
+  console.log('🧹 Limpiando universidades y carreras antiguas...');
+  await prisma.user.updateMany({
+    data: {
+      universityId: null,
+      careerId: null
+    }
+  });
+  await prisma.universityCareer.deleteMany({});
+  await prisma.university.deleteMany({});
+  await prisma.career.deleteMany({});
+  console.log('✅ Tablas limpiadas.');
   const fs = require('fs');
   const path = require('path');
   const renoesPath = path.join(__dirname, 'renoes_universities_careers.json');
