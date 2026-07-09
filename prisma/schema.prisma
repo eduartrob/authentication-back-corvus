@@ -55,11 +55,12 @@ model User {
 }
 
 model University {
-  id        String   @id @default(uuid()) @db.Uuid
-  name      String   @unique
-  acronym   String?
+  id               String   @id @default(uuid()) @db.Uuid
+  name             String   @unique
+  acronym          String?
+  registrationCode String?  @unique
   
-  users     User[]
+  users            User[]
 
   @@map("universities")
 }

@@ -180,8 +180,9 @@ export class AuthController {
           where: { name: { equals: career_id, mode: 'insensitive' } }
         });
         if (!car) {
+          const normalize = (str: string) => str.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
           car = await prisma.career.create({
-            data: { name: career_id }
+            data: { name: career_id, normalized_name: normalize(career_id) }
           });
         }
         finalCareerId = car.id;
