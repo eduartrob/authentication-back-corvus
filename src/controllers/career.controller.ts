@@ -1,6 +1,44 @@
 import { Request, Response, NextFunction } from 'express';
 import prisma from '../utils/prisma';
 
+export const getCareers = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const search = req.query.search as string;
+    const universityId = req.query.universityId as string;
+    
+    let queryArgs: any = {
+      orderBy: { name: 'asc' },
+      where: {},
+      take: 30
+    };
+
+    if (universityId) {
+      if (universityId.includes('-')) {
+        queryArgs.where.university_careers = { some: { universityId } };
+      } else {
+        queryArgs.where.university_careers = {
+          some: {
+            university: { name: { equals: universityId, mode: 'insensitive' } }
+          }
+        };
+      }
+    }
+
+    if (search && search.length >= 2) {
+      const normalize = (str: string) => str.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+      const normalizedSearch = normalize(search);
+      queryArgs.where.normalized_name = {
+        contains: normalizedSearch
+      };
+    }
+
+    const careers = await prisma.career.findMany(queryArgs);
+    res.status(200).json(careers);
+  } catch (error) {
+    next(error);
+  }
+};
+
 export const resolveCareer = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { careerName } = req.body;
