@@ -52,6 +52,27 @@ class RabbitMQService {
     );
     console.log(`📤 Evento publicado: auth.password_recovery.requested para ${email}`);
   }
+  async publishEmailVerification(userId: string, email: string, pin: string) {
+    if (!this.channel) return;
+    const payload = { userId, email, pin, timestamp: new Date() };
+    this.channel.publish(
+      this.EXCHANGE,
+      'auth.email_verification.requested',
+      Buffer.from(JSON.stringify(payload))
+    );
+    console.log(`📤 Evento publicado: auth.email_verification.requested para ${email}`);
+  }
+
+  async publishProfileUpdated(userId: string, data: any) {
+    if (!this.channel) return;
+    const payload = { userId, data, timestamp: new Date() };
+    this.channel.publish(
+      this.EXCHANGE,
+      'auth.profile.updated',
+      Buffer.from(JSON.stringify(payload))
+    );
+    console.log(`📤 Evento publicado: auth.profile.updated para User ${userId}`);
+  }
 }
 
 export const rabbitmqService = new RabbitMQService();

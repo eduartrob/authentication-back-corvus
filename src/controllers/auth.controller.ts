@@ -4,6 +4,10 @@ import { z } from 'zod';
 import logger from '../utils/logger';
 import crypto from 'crypto';
 import prisma from '../utils/prisma';
+import bcrypt from 'bcrypt';
+import jwt from 'jsonwebtoken';
+
+import { normalizeUniversity, normalizeCareer } from '../utils/normalizer';
 
 const authService = new AuthService();
 import { rabbitmqService } from '../services/rabbitmq.service';
@@ -109,8 +113,63 @@ export class AuthController {
     }
   }
 
+  async linkGoogle(req: Request, res: Response) {
+    try {
+      const user = (req as any).user;
+      if (!user || !user.id) {
+        res.status(401).json({ error: 'Unauthorized' });
+        return;
+      }
+      const validatedData = googleLoginSchema.parse(req.body);
+      const data = await authService.linkGoogleAccount(user.id, validatedData.authCode);
+
+      res.status(200).json(data);
+    } catch (error: any) {
+      if (error instanceof z.ZodError) {
+         res.status(400).json({ error: (error as any).errors });
+         return;
+      }
+      res.status(400).json({ error: error.message });
+    }
+  }
+
   async me(req: Request, res: Response) {
-      res.status(200).json({ user: (req as any).user });
+      try {
+          const user = (req as any).user;
+          const fullUser = await prisma.user.findUnique({
+              where: { id: user.id },
+              include: { role: true }
+          });
+          if (!fullUser) {
+              res.status(404).json({ error: 'User not found' });
+              return;
+          }
+          res.status(200).json({ 
+              user: {
+                  id: fullUser.id,
+                  email: fullUser.email,
+                  name: fullUser.full_name,
+                  photoUrl: fullUser.profile_picture,
+                  role: fullUser.role.name
+              }
+          });
+      } catch (error: any) {
+          res.status(500).json({ error: error.message });
+      }
+  }
+
+  async getCompleteProfile(req: Request, res: Response) {
+    try {
+      const user = (req as any).user;
+      if (!user || !user.id) {
+        res.status(401).json({ error: 'Unauthorized' });
+        return;
+      }
+      const profile = await authService.getCompleteProfile(user.id);
+      res.status(200).json(profile);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
   }
 
   async logout(req: Request, res: Response) {
@@ -156,19 +215,20 @@ export class AuthController {
         return;
       }
 
-      const { full_name, enrollment_id, university_id, career_id, skills } = req.body;
+      const { full_name, enrollment_id, university_id, career_id, period_number, skills } = req.body;
 
       let finalUniversityId = university_id;
       let finalCareerId = career_id;
 
       // Resolver ID de Universidad por nombre (o crearla)
       if (university_id && !university_id.includes('-')) {
+        const normUniv = normalizeUniversity(university_id);
         let uni = await prisma.university.findFirst({
-          where: { name: { equals: university_id, mode: 'insensitive' } }
+          where: { name: { equals: normUniv, mode: 'insensitive' } }
         });
         if (!uni) {
           uni = await prisma.university.create({
-            data: { name: university_id }
+            data: { name: normUniv }
           });
         }
         finalUniversityId = uni.id;
@@ -176,18 +236,20 @@ export class AuthController {
 
       // Resolver ID de Carrera por nombre
       if (career_id && !career_id.includes('-')) {
+        const normCareer = normalizeCareer(career_id);
         let car = await prisma.career.findFirst({
-          where: { name: { equals: career_id, mode: 'insensitive' } }
+          where: { name: { equals: normCareer, mode: 'insensitive' } }
         });
         if (!car) {
+          const normalize = (str: string) => str.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
           car = await prisma.career.create({
-            data: { name: career_id }
+            data: { name: career_id, normalized_name: normalize(career_id) }
           });
         }
         finalCareerId = car.id;
       }
 
-      // Actualizar el usuario con nombre, matricula, universidad y carrera
+      // Actualizar el usuario con nombre, matricula, universidad, carrera y cuatrimestre
       const updatedUser = await prisma.user.update({
         where: { id: user.id },
         data: {
@@ -195,6 +257,7 @@ export class AuthController {
           enrollment_id,
           universityId: finalUniversityId,
           careerId: finalCareerId,
+          semester: period_number ? String(period_number) : null,
         },
       });
 
@@ -279,4 +342,260 @@ export class AuthController {
       res.status(500).json({ error: error.message });
     }
   }
+
+  async updateProfile(req: Request, res: Response) {
+    try {
+      const user = (req as any).user;
+      if (!user) {
+        res.status(401).json({ error: 'No autorizado' });
+        return;
+      }
+
+      const { full_name, enrollment_id, semester, skills } = req.body;
+
+      // Actualizar el usuario
+      const updatedUser = await prisma.user.update({
+        where: { id: user.id },
+        data: {
+          full_name,
+          enrollment_id,
+          semester: semester ? String(semester) : null,
+        },
+      });
+
+      // Actualizar skills
+      if (skills && Array.isArray(skills)) {
+        await prisma.userSkill.deleteMany({
+          where: { userId: user.id },
+        });
+
+        const skillRecords = await prisma.skill.findMany({
+          where: {
+            name: {
+              in: skills,
+            },
+          },
+        });
+
+        for (const skill of skillRecords) {
+          await prisma.userSkill.create({
+            data: {
+              userId: user.id,
+              skillId: skill.id,
+            },
+          });
+        }
+        
+        // Publicar evento a RabbitMQ para que otros servicios se sincronicen
+        const { rabbitmqService } = require('../services/rabbitmq.service');
+        await rabbitmqService.publishProfileUpdated(user.id, { skills });
+      }
+
+      res.status(200).json({ message: 'Perfil actualizado exitosamente', user: updatedUser });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  }
+
+  async requestEmailVerification(req: Request, res: Response) {
+    try {
+      const user = (req as any).user;
+      if (!user) {
+        res.status(401).json({ error: 'No autorizado' });
+        return;
+      }
+
+      const { type } = req.body; // 'primary' | 'secondary'
+
+      const dbUser = await prisma.user.findUnique({ where: { id: user.id } });
+      if (!dbUser) return;
+
+      const emailToSend = type === 'secondary' ? dbUser.secondary_email : dbUser.email;
+      
+      if (!emailToSend) {
+        res.status(400).json({ error: 'Correo no encontrado' });
+        return;
+      }
+
+      // Generate a 6-digit random code
+      const pin = Math.floor(100000 + Math.random() * 900000).toString();
+      
+      // Set expiration to 15 minutes from now
+      const expiresAt = new Date();
+      expiresAt.setMinutes(expiresAt.getMinutes() + 15);
+
+      await prisma.user.update({
+        where: { id: user.id },
+        data: {
+          verification_code: pin,
+          verification_expires_at: expiresAt,
+        },
+      });
+
+      const { rabbitmqService } = require('../services/rabbitmq.service');
+      await rabbitmqService.publishEmailVerification(user.id, emailToSend, pin);
+
+      res.status(200).json({ message: 'Código de verificación enviado' });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  }
+
+  async confirmEmailVerification(req: Request, res: Response) {
+    try {
+      const user = (req as any).user;
+      if (!user) {
+        res.status(401).json({ error: 'No autorizado' });
+        return;
+      }
+
+      const { code, type } = req.body;
+      if (!code) {
+        res.status(400).json({ error: 'Código no proporcionado' });
+        return;
+      }
+
+      const dbUser = await prisma.user.findUnique({
+        where: { id: user.id },
+      });
+
+      if (!dbUser || dbUser.verification_code !== code) {
+        res.status(400).json({ error: 'Código incorrecto' });
+        return;
+      }
+
+      if (dbUser.verification_expires_at && new Date() > dbUser.verification_expires_at) {
+        res.status(400).json({ error: 'El código ha expirado' });
+        return;
+      }
+
+      const isSecondary = type === 'secondary';
+
+      await prisma.user.update({
+        where: { id: user.id },
+        data: {
+          is_verified: isSecondary ? dbUser.is_verified : true,
+          secondary_is_verified: isSecondary ? true : dbUser.secondary_is_verified,
+          verification_code: null,
+          verification_expires_at: null,
+        },
+      });
+
+      res.status(200).json({ message: 'Correo verificado exitosamente' });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  }
+
+  async addSecondaryEmail(req: Request, res: Response) {
+    try {
+      const user = (req as any).user;
+      if (!user) return res.status(401).json({ error: 'No autorizado' });
+
+      const { email } = req.body;
+      if (!email) return res.status(400).json({ error: 'Falta correo electrónico' });
+
+      // Verificar si el correo ya existe
+      const existing = await prisma.user.findFirst({
+        where: { OR: [{ email: email }, { secondary_email: email }] }
+      });
+
+      if (existing && existing.id !== user.id) {
+        return res.status(400).json({ error: 'Este correo ya está en uso' });
+      }
+
+      await prisma.user.update({
+        where: { id: user.id },
+        data: {
+          secondary_email: email,
+          secondary_is_verified: false,
+        }
+      });
+
+      res.status(200).json({ message: 'Correo secundario agregado exitosamente' });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  }
+
+  async deleteEmail(req: Request, res: Response) {
+    try {
+      const user = (req as any).user;
+      if (!user) return res.status(401).json({ error: 'No autorizado' });
+
+      const { type } = req.body;
+      if (!type || (type !== 'primary' && type !== 'secondary')) {
+        return res.status(400).json({ error: 'Tipo de correo no válido' });
+      }
+
+      const dbUser = await prisma.user.findUnique({ where: { id: user.id } });
+      if (!dbUser) return res.status(404).json({ error: 'Usuario no encontrado' });
+
+      if (!dbUser.secondary_email) {
+        return res.status(400).json({ error: 'No puedes borrar tu único correo.' });
+      }
+
+      let dataToUpdate: any = {};
+
+      if (type === 'primary') {
+        // Mover secundario a primario
+        dataToUpdate.email = dbUser.secondary_email;
+        dataToUpdate.is_verified = dbUser.secondary_is_verified;
+        dataToUpdate.secondary_email = null;
+        dataToUpdate.secondary_is_verified = false;
+        
+        // Si el primario que estamos borrando era el de Google, lo desvinculamos
+        if (dbUser.google_email === dbUser.email) {
+          dataToUpdate.google_email = null;
+          dataToUpdate.google_access_token = null;
+          dataToUpdate.google_refresh_token = null;
+        }
+      } else {
+        dataToUpdate.secondary_email = null;
+        dataToUpdate.secondary_is_verified = false;
+
+        // Si el secundario que estamos borrando era el de Google, lo desvinculamos
+        if (dbUser.google_email === dbUser.secondary_email) {
+          dataToUpdate.google_email = null;
+          dataToUpdate.google_access_token = null;
+          dataToUpdate.google_refresh_token = null;
+        }
+      }
+
+      await prisma.user.update({
+        where: { id: user.id },
+        data: dataToUpdate
+      });
+
+      res.status(200).json({ message: 'Correo borrado exitosamente' });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  }
+
+  async deleteAccount(req: Request, res: Response) {
+    try {
+      const user = (req as any).user;
+      if (!user) {
+        res.status(401).json({ error: 'No autorizado' });
+        return;
+      }
+
+      // La eliminación en cascada de Prisma se encargará de borrar:
+      // - user_skills
+      // - linked_folders
+      // - llm_sessions
+      // - requests (a través de la DB si es que está configurado cascade)
+      // Y establecerá en NULL el userId en activity_logs
+      
+      await prisma.user.delete({
+        where: { id: user.id },
+      });
+
+      res.status(200).json({ message: 'Cuenta eliminada exitosamente. Tu historial ha sido anonimizado.' });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  }
 }
+
