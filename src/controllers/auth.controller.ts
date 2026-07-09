@@ -131,8 +131,6 @@ export class AuthController {
     try {
       const validatedData = recoverPasswordSchema.parse(req.body);
       
-
-      // -# 1 generar pin criptograficamente seguro de 6 digitos
       const securePin = crypto.randomInt(100000, 999999).toString();
 
       rabbitmqService.publishPasswordRecovery("user-id", validatedData.email, securePin);
@@ -146,6 +144,138 @@ export class AuthController {
          res.status(400).json({ error: (error as any).errors });
          return;
       }
+      res.status(500).json({ error: error.message });
+    }
+  }
+
+  async completeStudentProfile(req: Request, res: Response) {
+    try {
+      const user = (req as any).user;
+      if (!user) {
+        res.status(401).json({ error: 'No autorizado' });
+        return;
+      }
+
+      const { full_name, enrollment_id, university_id, career_id, skills } = req.body;
+
+      let finalUniversityId = university_id;
+      let finalCareerId = career_id;
+
+      // Resolver ID de Universidad por nombre (o crearla)
+      if (university_id && !university_id.includes('-')) {
+        let uni = await prisma.university.findFirst({
+          where: { name: { equals: university_id, mode: 'insensitive' } }
+        });
+        if (!uni) {
+          uni = await prisma.university.create({
+            data: { name: university_id }
+          });
+        }
+        finalUniversityId = uni.id;
+      }
+
+      // Resolver ID de Carrera por nombre
+      if (career_id && !career_id.includes('-')) {
+        let car = await prisma.career.findFirst({
+          where: { name: { equals: career_id, mode: 'insensitive' } }
+        });
+        if (!car) {
+          car = await prisma.career.create({
+            data: { name: career_id }
+          });
+        }
+        finalCareerId = car.id;
+      }
+
+      // Actualizar el usuario con nombre, matricula, universidad y carrera
+      const updatedUser = await prisma.user.update({
+        where: { id: user.id },
+        data: {
+          full_name,
+          enrollment_id,
+          universityId: finalUniversityId,
+          careerId: finalCareerId,
+        },
+      });
+
+      // Si se enviaron skills, actualizamos las habilidades del usuario
+      if (skills && Array.isArray(skills)) {
+        // Borrar habilidades anteriores (por si acaso)
+        await prisma.userSkill.deleteMany({
+          where: { userId: user.id },
+        });
+
+        // Buscar los IDs de los skills por su nombre
+        const skillRecords = await prisma.skill.findMany({
+          where: {
+            name: {
+              in: skills,
+            },
+          },
+        });
+
+        // Crear la relacion en UserSkill
+        for (const skill of skillRecords) {
+          await prisma.userSkill.create({
+            data: {
+              userId: user.id,
+              skillId: skill.id,
+            },
+          });
+        }
+      }
+
+      res.status(200).json({ message: 'Perfil completado exitosamente', user: updatedUser });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  }
+
+  async updateProfilePicture(req: Request, res: Response) {
+    try {
+      const user = (req as any).user;
+      if (!user) {
+        res.status(401).json({ error: 'No autorizado' });
+        return;
+      }
+
+      const { imageBase64 } = req.body;
+      if (!imageBase64) {
+        res.status(400).json({ error: 'No image provided' });
+        return;
+      }
+
+      // Configure Cloudinary using user's credentials
+      const cloudinary = require('cloudinary').v2;
+      cloudinary.config({
+        cloud_name: 'zpqp1swt',
+        api_key: '594268643178644',
+        api_secret: 'q-zoYZBI_Oblx72m7YlTM16KLTQ',
+      });
+
+      // Upload image to Cloudinary (base64 string can be passed directly if it includes data:image/... base64,)
+      // If it doesn't have the prefix, we assume it's jpeg
+      let uploadStr = imageBase64;
+      if (!uploadStr.startsWith('data:image')) {
+          uploadStr = `data:image/jpeg;base64,${uploadStr}`;
+      }
+
+      const result = await cloudinary.uploader.upload(uploadStr, {
+          folder: 'corvus_profiles',
+          public_id: user.id, // Overwrite previous picture if any
+          overwrite: true,
+          transformation: [
+              { width: 400, height: 400, crop: 'fill', gravity: 'face' } // optimize for profile
+          ]
+      });
+
+      const updatedUser = await prisma.user.update({
+        where: { id: user.id },
+        data: { profile_picture: result.secure_url },
+      });
+
+      res.status(200).json({ message: 'Profile picture updated', profile_picture: result.secure_url });
+    } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
   }
