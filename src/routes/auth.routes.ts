@@ -11,7 +11,6 @@ router.post('/login', authController.login);
 router.post('/profile/secondary-email', authenticateJWT, authController.addSecondaryEmail);
 router.delete('/profile/email', authenticateJWT, authController.deleteEmail);
 
-router.post('/request-password-reset', authController.requestPasswordReset);
 router.post('/google', authController.googleLogin);
 router.post('/logout', authenticateJWT, authController.logout);
 router.post('/link-google', authenticateJWT, authController.linkGoogle);
