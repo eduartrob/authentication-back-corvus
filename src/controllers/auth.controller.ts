@@ -19,6 +19,7 @@ const registerSchema = z.object({
   username: z.string().optional(),
   fullName: z.string().optional(),
   profilePicture: z.string().url().optional(),
+  googleEmail: z.string().email().optional(),
 });
 
 const loginSchema = z.object({
