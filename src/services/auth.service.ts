@@ -12,7 +12,7 @@ const googleClient = new OAuth2Client(
 export class AuthService {
   async register(data: any) {
     try {
-      const { email, password, roleName, username, fullName, profilePicture } = data;
+      const { email, password, roleName, username, fullName, profilePicture, googleEmail } = data;
 
       // -# find or create role
       let role = await prisma.role.findUnique({ where: { name: roleName } });
@@ -36,6 +36,7 @@ export class AuthService {
           username: username || null,
           full_name: fullName || null,
           profile_picture: profilePicture || null,
+          google_email: googleEmail || null,
         },
       });
 
@@ -315,7 +316,7 @@ export class AuthService {
         alumno: user.full_name || user.email,
         correo: user.email,
         correo_secundario: user.secondary_email,
-        is_google_linked: user.google_access_token ? true : false,
+        is_google_linked: !!(user.google_access_token || user.google_email),
         universidad: user.university?.name || null,
         carrera: user.career?.name || null,
         cuatrimestre: user.semester,
