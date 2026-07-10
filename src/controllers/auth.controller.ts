@@ -270,13 +270,28 @@ export class AuthController {
         });
 
         // Buscar los IDs de los skills por su nombre
-        const skillRecords = await prisma.skill.findMany({
+        let skillRecords = await prisma.skill.findMany({
           where: {
             name: {
               in: skills,
             },
           },
         });
+
+        // Create missing skills
+        const foundSkillNames = skillRecords.map((s: any) => s.name);
+        const missingSkills = skills.filter((s: string) => !foundSkillNames.includes(s));
+        
+        for (const skillName of missingSkills) {
+          const normalize = (str: string) => str.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+          const newSkill = await prisma.skill.create({
+            data: { 
+              name: skillName, 
+              normalized_name: normalize(skillName) 
+            }
+          });
+          skillRecords.push(newSkill);
+        }
 
         // Crear la relacion en UserSkill
         for (const skill of skillRecords) {
@@ -344,6 +359,38 @@ export class AuthController {
     }
   }
 
+  async deleteProfilePicture(req: Request, res: Response) {
+    try {
+      const user = (req as any).user;
+      if (!user) {
+        res.status(401).json({ error: 'No autorizado' });
+        return;
+      }
+
+      const cloudinary = require('cloudinary').v2;
+      cloudinary.config({
+        cloud_name: 'zpqp1swt',
+        api_key: '594268643178644',
+        api_secret: 'q-zoYZBI_Oblx72m7YlTM16KLTQ',
+      });
+
+      try {
+        await cloudinary.uploader.destroy(`corvus_profiles/${user.id}`);
+      } catch (cloudinaryError) {
+        console.error('Error deleting photo from Cloudinary:', cloudinaryError);
+      }
+
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { profile_picture: null },
+      });
+
+      res.status(200).json({ message: 'Foto de perfil eliminada' });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  }
+
   async updateProfile(req: Request, res: Response) {
     try {
       const user = (req as any).user;
@@ -352,32 +399,71 @@ export class AuthController {
         return;
       }
 
-      const { full_name, enrollment_id, semester, skills, university_id } = req.body;
+      const { full_name, enrollment_id, semester, skills, careers, university_id } = req.body;
+
+      let dataToUpdate: any = {
+        full_name,
+        enrollment_id,
+        semester: semester ? String(semester) : null,
+        universityId: university_id || undefined,
+      };
+
+      let finalSkills = skills;
+
+      if (careers !== undefined && Array.isArray(careers)) {
+        if (careers.length > 0) {
+          const mainCareer = careers[0];
+          const normCareer = normalizeCareer(mainCareer);
+          let car = await prisma.career.findFirst({
+            where: { name: { equals: normCareer, mode: 'insensitive' } }
+          });
+          if (!car) {
+            const normalize = (str: string) => str.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+            car = await prisma.career.create({
+              data: { name: mainCareer, normalized_name: normalize(mainCareer) }
+            });
+          }
+          dataToUpdate.careerId = car.id;
+          finalSkills = careers.slice(1);
+        } else {
+          finalSkills = [];
+        }
+      }
 
       // Actualizar el usuario
       const updatedUser = await prisma.user.update({
         where: { id: user.id },
-        data: {
-          full_name,
-          enrollment_id,
-          semester: semester ? String(semester) : null,
-          universityId: university_id || undefined,
-        },
+        data: dataToUpdate,
       });
 
       // Actualizar skills
-      if (skills && Array.isArray(skills)) {
+      if (finalSkills && Array.isArray(finalSkills)) {
         await prisma.userSkill.deleteMany({
           where: { userId: user.id },
         });
 
-        const skillRecords = await prisma.skill.findMany({
+        let skillRecords = await prisma.skill.findMany({
           where: {
             name: {
-              in: skills,
+              in: finalSkills,
             },
           },
         });
+
+        // Create missing skills
+        const foundSkillNames = skillRecords.map((s: any) => s.name);
+        const missingSkills = finalSkills.filter((s: string) => !foundSkillNames.includes(s));
+        
+        for (const skillName of missingSkills) {
+          const normalize = (str: string) => str.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+          const newSkill = await prisma.skill.create({
+            data: { 
+              name: skillName, 
+              normalized_name: normalize(skillName) 
+            }
+          });
+          skillRecords.push(newSkill);
+        }
 
         for (const skill of skillRecords) {
           await prisma.userSkill.create({
@@ -390,7 +476,7 @@ export class AuthController {
         
         // Publicar evento a RabbitMQ para que otros servicios se sincronicen
         const { rabbitmqService } = require('../services/rabbitmq.service');
-        await rabbitmqService.publishProfileUpdated(user.id, { skills });
+        await rabbitmqService.publishProfileUpdated(user.id, { skills: finalSkills });
       }
 
       res.status(200).json({ message: 'Perfil actualizado exitosamente', user: updatedUser });
@@ -589,6 +675,19 @@ export class AuthController {
       // - llm_sessions
       // - requests (a través de la DB si es que está configurado cascade)
       // Y establecerá en NULL el userId en activity_logs
+
+      // Delete photo from Cloudinary
+      const cloudinary = require('cloudinary').v2;
+      cloudinary.config({
+        cloud_name: 'zpqp1swt',
+        api_key: '594268643178644',
+        api_secret: 'q-zoYZBI_Oblx72m7YlTM16KLTQ',
+      });
+      try {
+        await cloudinary.uploader.destroy(`corvus_profiles/${user.id}`);
+      } catch (cloudinaryError) {
+        console.error('Error deleting photo during account deletion:', cloudinaryError);
+      }
       
       await prisma.user.delete({
         where: { id: user.id },

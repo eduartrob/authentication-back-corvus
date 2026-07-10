@@ -20,6 +20,7 @@ router.get('/profile/complete', authenticateJWT, authController.getCompleteProfi
 router.put('/complete-student-profile', authenticateJWT, authController.completeStudentProfile);
 router.put('/profile', authenticateJWT, authController.updateProfile);
 router.put('/profile-picture', authenticateJWT, authController.updateProfilePicture);
+router.delete('/profile-picture', authenticateJWT, authController.deleteProfilePicture);
 router.post('/verify/request', authenticateJWT, authController.requestEmailVerification);
 router.post('/verify/confirm', authenticateJWT, authController.confirmEmailVerification);
 router.delete('/delete-account', authenticateJWT, authController.deleteAccount);
