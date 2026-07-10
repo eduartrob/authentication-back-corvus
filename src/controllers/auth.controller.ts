@@ -352,7 +352,7 @@ export class AuthController {
         return;
       }
 
-      const { full_name, enrollment_id, semester, skills } = req.body;
+      const { full_name, enrollment_id, semester, skills, university_id } = req.body;
 
       // Actualizar el usuario
       const updatedUser = await prisma.user.update({
@@ -361,6 +361,7 @@ export class AuthController {
           full_name,
           enrollment_id,
           semester: semester ? String(semester) : null,
+          universityId: university_id || undefined,
         },
       });
 
