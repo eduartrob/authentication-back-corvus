@@ -399,6 +399,8 @@ export class AuthController {
         return;
       }
 
+      console.log('--- UPDATE PROFILE BODY ---', req.body);
+
       const { full_name, enrollment_id, semester, skills, careers, university_id } = req.body;
 
       let dataToUpdate: any = {
@@ -444,15 +446,15 @@ export class AuthController {
 
         let skillRecords = await prisma.skill.findMany({
           where: {
-            name: {
-              in: finalSkills,
-            },
+            OR: finalSkills.map((s: string) => ({
+              name: { equals: s, mode: 'insensitive' }
+            }))
           },
         });
 
         // Create missing skills
-        const foundSkillNames = skillRecords.map((s: any) => s.name);
-        const missingSkills = finalSkills.filter((s: string) => !foundSkillNames.includes(s));
+        const foundSkillNames = skillRecords.map((s: any) => s.name.toLowerCase());
+        const missingSkills = finalSkills.filter((s: string) => !foundSkillNames.includes(s.toLowerCase()));
         
         for (const skillName of missingSkills) {
           const newSkill = await prisma.skill.create({
