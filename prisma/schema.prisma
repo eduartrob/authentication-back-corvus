@@ -186,3 +186,20 @@ model ActivityLog {
 
   @@map("activity_logs")
 }
+
+model FinalReview {
+  id               String   @id @default(uuid()) @db.Uuid
+  team_id          String   @db.Uuid
+  career_id        String   @db.Uuid
+  university_id    String   @db.Uuid
+  student_id       String   @db.Uuid
+  proposal_data    Json     // Link PDF + AI Analysis
+  status           String   @default("PENDING") // PENDING, APPROVED, REJECTED, SUMMONED
+  appointment_date DateTime?
+  location_link    String?
+
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  @@map("final_reviews")
+}
