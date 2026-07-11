@@ -176,40 +176,6 @@ async function main() {
     });
     console.log(`🔄 Usuario admin actualizado: ${emailRey}`);
   }
-
-  // -# 8 Seeding Universidades
-  console.log('🏫 Iniciando seeding de universidades...');
-  const fs = require('fs');
-  const path = require('path');
-  const uniPath = path.join(__dirname, 'universities.json');
-  let universitiesData = [];
-  try {
-    const rawData = fs.readFileSync(uniPath, 'utf-8');
-    universitiesData = JSON.parse(rawData);
-  } catch (err) {
-    console.log('No se pudo leer universities.json, se usarán algunas por defecto.');
-  }
-
-  const uniNames = new Set(universitiesData.map((u: any) => u.name));
-  
-  // Agregar específicas manuales (como pidió el usuario)
-  uniNames.add('Universidad Politécnica de Chiapas');
-  uniNames.add('Universidad Politécnica de Chiapas (UPChiapas)');
-  uniNames.add('Universidad Nacional Autónoma de México (UNAM)');
-  uniNames.add('Instituto Politécnico Nacional (IPN)');
-  
-  let insertedUnis = 0;
-  for (const name of Array.from(uniNames)) {
-    const exists = await prisma.university.findUnique({ where: { name: name as string } });
-    if (!exists) {
-      await prisma.university.create({
-        data: { name: name as string },
-      });
-      insertedUnis++;
-    }
-  }
-  console.log(`✅ ${insertedUnis} universidades nuevas agregadas.`);
-
   console.log('🎉 Seeding completado con éxito.');
 }
 
