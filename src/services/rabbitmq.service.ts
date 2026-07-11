@@ -73,6 +73,16 @@ class RabbitMQService {
     );
     console.log(`📤 Evento publicado: auth.profile.updated para User ${userId}`);
   }
+
+  async publishPushNotification(payload: any) {
+    if (!this.channel) return;
+    this.channel.publish(
+      this.EXCHANGE,
+      'notifications.push.send',
+      Buffer.from(JSON.stringify(payload))
+    );
+    console.log(`📤 Evento publicado: notifications.push.send para ${payload.userId}`);
+  }
 }
 
 export const rabbitmqService = new RabbitMQService();

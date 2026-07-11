@@ -1,4 +1,5 @@
 import { Request, Response } from 'express';
+import { AuthRequest } from '../middlewares/auth.middleware';
 import { z } from 'zod';
 import logger from '../utils/logger';
 import prisma from '../utils/prisma';
@@ -17,7 +18,7 @@ const updateReviewStatusSchema = z.object({
 
 export class FinalReviewController {
   
-  public async submitFinalReview(req: Request, res: Response): Promise<void> {
+  public async submitFinalReview(req: AuthRequest, res: Response): Promise<void> {
     try {
       const studentId = req.user?.userId;
       if (!studentId) {
@@ -61,14 +62,14 @@ export class FinalReviewController {
     } catch (error) {
       logger.error('Error submitting final review', { error });
       if (error instanceof z.ZodError) {
-         res.status(400).json({ message: 'Invalid data', errors: error.errors });
+         res.status(400).json({ message: 'Invalid data', errors: (error as z.ZodError).errors });
          return;
       }
       res.status(500).json({ message: 'Internal server error' });
     }
   }
 
-  public async getReviewsByProfessorCareer(req: Request, res: Response): Promise<void> {
+  public async getReviewsByProfessorCareer(req: AuthRequest, res: Response): Promise<void> {
     try {
       const profId = req.user?.userId;
       if (!profId) {
@@ -102,7 +103,7 @@ export class FinalReviewController {
     }
   }
 
-  public async updateReviewStatus(req: Request, res: Response): Promise<void> {
+  public async updateReviewStatus(req: AuthRequest, res: Response): Promise<void> {
     try {
       const profId = req.user?.userId;
       const reviewId = req.params.id;
@@ -128,7 +129,7 @@ export class FinalReviewController {
         data: {
           status: parsedData.status,
           appointment_date: parsedData.appointment_date ? new Date(parsedData.appointment_date) : null,
-          location_link: parsedData.location_link
+          location_link: parsedData.location_link as string | undefined
         }
       });
 
@@ -138,13 +139,13 @@ export class FinalReviewController {
         if (parsedData.status === 'SUMMONED') {
            notifMessage = `Tu equipo ha sido citado a revisión el ${parsedData.appointment_date}`;
         }
-        await rabbitmqService.publishNotification({
+        await rabbitmqService.publishPushNotification({
           userId: review.student_id,
           title: 'Actualización de Revisión Final',
           body: notifMessage,
           type: 'SYSTEM',
-          data: { reviewId: updatedReview.id, status: parsedData.status }
-        });
+          data: JSON.stringify({ reviewId: updatedReview.id, status: parsedData.status })
+        } as any);
       } catch (qError) {
         logger.error('Failed to emit notification', { qError });
       }
@@ -153,7 +154,7 @@ export class FinalReviewController {
     } catch (error) {
       logger.error('Error updating review status', { error });
       if (error instanceof z.ZodError) {
-         res.status(400).json({ message: 'Invalid data', errors: error.errors });
+         res.status(400).json({ message: 'Invalid data', errors: (error as z.ZodError).errors });
          return;
       }
       res.status(500).json({ message: 'Internal server error' });
