@@ -62,7 +62,7 @@ export class FinalReviewController {
     } catch (error) {
       logger.error('Error submitting final review', { error });
       if (error instanceof z.ZodError) {
-         res.status(400).json({ message: 'Invalid data', errors: (error as z.ZodError).errors });
+         res.status(400).json({ message: 'Invalid data', errors: (error as any).errors });
          return;
       }
       res.status(500).json({ message: 'Internal server error' });
@@ -106,7 +106,7 @@ export class FinalReviewController {
   public async updateReviewStatus(req: AuthRequest, res: Response): Promise<void> {
     try {
       const profId = req.user?.userId;
-      const reviewId = req.params.id;
+      const reviewId = req.params.id as string;
 
       if (!profId) {
         res.status(401).json({ message: 'Unauthorized' });
@@ -154,7 +154,7 @@ export class FinalReviewController {
     } catch (error) {
       logger.error('Error updating review status', { error });
       if (error instanceof z.ZodError) {
-         res.status(400).json({ message: 'Invalid data', errors: (error as z.ZodError).errors });
+         res.status(400).json({ message: 'Invalid data', errors: (error as any).errors });
          return;
       }
       res.status(500).json({ message: 'Internal server error' });
