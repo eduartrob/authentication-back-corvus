@@ -50,4 +50,27 @@ router.post('/users/:userId/llm-sessions', async (req, res) => {
   }
 });
 
+router.post('/activity-log', async (req, res) => {
+  const { userId, action, detail } = req.body;
+
+  if (!userId || !action || !detail) {
+    return res.status(400).json({ error: 'Missing required fields' });
+  }
+
+  try {
+    const log = await (prisma as any).activityLog.create({
+      data: {
+        userId,
+        action,
+        detail,
+        ipAddress: req.ip || '0.0.0.0'
+      }
+    });
+    return res.status(201).json({ success: true, log });
+  } catch (error) {
+    console.error('[internal/activity-log] Error:', error);
+    return res.status(500).json({ error: 'Error creating activity log' });
+  }
+});
+
 export default router;

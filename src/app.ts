@@ -9,6 +9,7 @@ import internalRoutes from './routes/internal.routes';
 import universityRoutes from './routes/university.routes';
 import careerRoutes from './routes/career.routes';
 import finalReviewRoutes from './routes/finalReview.routes';
+import professorRoutes from './routes/professor.routes';
 import { errorHandler } from './middlewares/error.middleware';
 
 const app = express();
@@ -25,6 +26,7 @@ app.use('/admin', adminRoutes);
 app.use('/universities', universityRoutes);
 app.use('/careers', careerRoutes);
 app.use('/final-reviews', finalReviewRoutes);
+app.use('/professors', professorRoutes);
 
 app.use('/internal', internalRoutes);
 
