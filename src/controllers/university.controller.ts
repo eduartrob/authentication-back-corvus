@@ -21,9 +21,9 @@ export const getUniversities = async (req: Request, res: Response, next: NextFun
       universities = allUniversities.filter(u => {
         const normalizedName = normalize(u.name);
         return normalizedName.includes(normalizedSearch);
-      }).slice(0, 30);
+      });
     } else {
-      universities = allUniversities.slice(0, 30);
+      universities = allUniversities;
     }
     
     res.status(200).json(universities);

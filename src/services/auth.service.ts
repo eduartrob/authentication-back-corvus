@@ -12,7 +12,7 @@ const googleClient = new OAuth2Client(
 export class AuthService {
   async register(data: any) {
     try {
-      const { email, password, roleName, username, fullName, profilePicture } = data;
+      const { email, password, roleName, username, fullName, profilePicture, googleEmail } = data;
 
       // -# find or create role
       let role = await prisma.role.findUnique({ where: { name: roleName } });
@@ -36,6 +36,7 @@ export class AuthService {
           username: username || null,
           full_name: fullName || null,
           profile_picture: profilePicture || null,
+          google_email: googleEmail || null,
         },
       });
 
@@ -123,31 +124,6 @@ export class AuthService {
         profilePicture = payload.picture || '';
       }
 
-      // -# validar el dominio del correo institucional o las cuentas especificas de pruebas de google
-      let roleName = '';
-      const emailLower = email.toLowerCase();
-      
-      if (
-        emailLower === 'eduartrob2@gmail.com' ||
-        emailLower === 'thegreatteachertester@gmail.com' ||
-        emailLower.endsWith('@upchiapas.edu.mx')
-      ) {
-        roleName = 'PROFESOR';
-      } else if (
-        emailLower === 'testeralumnos@gmail.com' ||
-        emailLower === 'eduartrob3@gmail.com' ||
-        emailLower.endsWith('@ids.upchiapas.edu.mx')
-      ) {
-        roleName = 'ALUMNO';
-      } else {
-        throw new Error('Dominio de correo no permitido. Solo se aceptan correos institucionales de la universidad.');
-      }
-
-      // -# buscar si el rol existe si no crearlo
-      let role = await prisma.role.findUnique({ where: { name: roleName } });
-      if (!role) {
-        role = await prisma.role.create({ data: { name: roleName } });
-      }
 
       // -# buscar al usuario
       let user = await prisma.user.findUnique({
@@ -169,7 +145,16 @@ export class AuthService {
 
         user = await prisma.user.update({
           where: { email },
+<<<<<<< HEAD
           data: updateData,
+=======
+          data: {
+            full_name: user.full_name || fullName,
+            profile_picture: user.profile_picture || profilePicture,
+            google_access_token: accessToken || user.google_access_token,
+            google_refresh_token: refreshToken || user.google_refresh_token
+          },
+>>>>>>> dev
           include: { role: true }
         });
       }
@@ -229,25 +214,6 @@ export class AuthService {
         profilePicture = payload.picture || '';
       }
 
-      // Validar el dominio del correo institucional o las cuentas especificas de pruebas
-      let roleName = '';
-      const emailLower = email.toLowerCase();
-      
-      if (
-        emailLower === 'eduartrob2@gmail.com' ||
-        emailLower === 'thegreatteachertester@gmail.com' ||
-        emailLower.endsWith('@upchiapas.edu.mx')
-      ) {
-        roleName = 'PROFESOR';
-      } else if (
-        emailLower === 'testeralumnos@gmail.com' ||
-        emailLower === 'eduartrob3@gmail.com' ||
-        emailLower.endsWith('@ids.upchiapas.edu.mx')
-      ) {
-        roleName = 'ALUMNO';
-      } else {
-        throw new Error('Dominio de correo no permitido. Solo se aceptan correos institucionales de la universidad.');
-      }
 
       const currentUser = await prisma.user.findUnique({ where: { id: userId } });
       if (!currentUser) throw new Error('Usuario no encontrado');
@@ -319,7 +285,7 @@ export class AuthService {
         alumno: user.full_name || user.email,
         correo: user.email,
         correo_secundario: user.secondary_email,
-        is_google_linked: user.google_access_token ? true : false,
+        is_google_linked: !!(user.google_access_token || user.google_email),
         universidad: user.university?.name || null,
         carrera: user.career?.name || null,
         cuatrimestre: user.semester,
