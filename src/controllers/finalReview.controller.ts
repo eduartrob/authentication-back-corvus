@@ -20,7 +20,7 @@ export class FinalReviewController {
   
   public async submitFinalReview(req: AuthRequest, res: Response): Promise<void> {
     try {
-      const studentId = req.user?.userId;
+      const studentId = req.user?.id;
       if (!studentId) {
         res.status(401).json({ message: 'Unauthorized' });
         return;
@@ -28,17 +28,17 @@ export class FinalReviewController {
 
       const parsedData = createReviewSchema.parse(req.body);
 
-      // Verify the student exists and is part of this team
+      // Verify the student exists
       const student = await prisma.user.findUnique({
         where: { id: studentId }
       });
 
-      if (!student || student.team_id !== parsedData.team_id) {
-         res.status(403).json({ message: 'User does not belong to this team' });
-         return;
+      if (!student) {
+        res.status(403).json({ message: 'Student not found' });
+        return;
       }
 
-      // Check if team already has a pending review
+      // Check if the team already has a pending review
       const existingReview = await prisma.finalReview.findFirst({
         where: { team_id: parsedData.team_id, status: 'PENDING' }
       });
@@ -47,6 +47,13 @@ export class FinalReviewController {
         res.status(400).json({ message: 'El equipo ya tiene una revisión en curso.' });
         return;
       }
+
+      // Build the enriched proposal_data
+      const proposalDataWithMeta = {
+        ...(typeof parsedData.proposal_data === 'object' ? parsedData.proposal_data : {}),
+        submitted_at: new Date().toISOString(),
+        submitted_by: student.full_name || student.username || studentId,
+      };
       
       const newReview = await prisma.finalReview.create({
         data: {
@@ -54,7 +61,7 @@ export class FinalReviewController {
           student_id: studentId,
           career_id: student.careerId!,
           university_id: student.universityId!,
-          proposal_data: parsedData.proposal_data,
+          proposal_data: proposalDataWithMeta,
         }
       });
 
@@ -71,7 +78,7 @@ export class FinalReviewController {
 
   public async getReviewsByProfessorCareer(req: AuthRequest, res: Response): Promise<void> {
     try {
-      const profId = req.user?.userId;
+      const profId = req.user?.id;
       if (!profId) {
         res.status(401).json({ message: 'Unauthorized' });
         return;
@@ -105,7 +112,7 @@ export class FinalReviewController {
 
   public async updateReviewStatus(req: AuthRequest, res: Response): Promise<void> {
     try {
-      const profId = req.user?.userId;
+      const profId = req.user?.id;
       const reviewId = req.params.id as string;
 
       if (!profId) {

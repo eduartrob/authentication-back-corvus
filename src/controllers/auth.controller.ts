@@ -255,7 +255,7 @@ export class AuthController {
         where: { id: user.id },
         data: {
           full_name,
-          enrollment_id,
+          enrollment_id: enrollment_id === "" ? null : enrollment_id,
           universityId: finalUniversityId,
           careerId: finalCareerId,
           semester: period_number ? String(period_number) : null,
@@ -405,7 +405,7 @@ export class AuthController {
 
       let dataToUpdate: any = {
         full_name,
-        enrollment_id,
+        enrollment_id: enrollment_id === "" ? null : enrollment_id,
         semester: semester ? String(semester) : null,
         universityId: university_id || undefined,
       };
