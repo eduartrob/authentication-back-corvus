@@ -7,6 +7,7 @@ const controller = new FinalReviewController();
 
 router.post('/', authenticateJWT, controller.submitFinalReview);
 router.get('/', authenticateJWT, controller.getReviewsByProfessorCareer);
+router.get('/team/:teamId', authenticateJWT, controller.getReviewByMyTeam);
 router.patch('/:id/status', authenticateJWT, controller.updateReviewStatus);
 
 export default router;
