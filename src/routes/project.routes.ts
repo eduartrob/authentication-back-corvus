@@ -1,12 +1,12 @@
 import { Router } from 'express';
 import { ProjectController } from '../controllers/project.controller';
-import { verifyAuth } from '../middlewares/auth.middleware';
+import { authenticateJWT } from '../middlewares/auth.middleware';
 
 const router = Router();
 const projectController = new ProjectController();
 
-// Todas las rutas requieren autenticación
-router.use(verifyAuth);
+// All project routes require authentication
+router.use(authenticateJWT);
 
 router.post('/', projectController.createProject.bind(projectController));
 router.post('/join', projectController.joinProject.bind(projectController));
