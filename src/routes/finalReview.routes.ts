@@ -9,5 +9,6 @@ router.post('/', authenticateJWT, controller.submitFinalReview);
 router.get('/', authenticateJWT, controller.getReviewsByProfessorCareer);
 router.get('/team/:teamId', authenticateJWT, controller.getReviewByMyTeam);
 router.patch('/:id/status', authenticateJWT, controller.updateReviewStatus);
+router.post('/:id/evaluate', authenticateJWT, controller.addProfessorEvaluation);
 
 export default router;

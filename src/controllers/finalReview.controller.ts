@@ -17,6 +17,11 @@ const updateReviewStatusSchema = z.object({
   reason: z.string().optional()
 });
 
+const evaluateIndividualSchema = z.object({
+  status: z.enum(['APPROVED', 'REJECTED']),
+  comment: z.string().optional()
+});
+
 export class FinalReviewController {
   
   public async submitFinalReview(req: AuthRequest, res: Response): Promise<void> {
@@ -46,6 +51,15 @@ export class FinalReviewController {
 
       if (existingReview) {
         res.status(400).json({ message: 'El equipo ya tiene una revisión en curso.' });
+        return;
+      }
+
+      // Fetch the team to get project context
+      const team = await prisma.team.findUnique({
+        where: { id: parsedData.team_id }
+      });
+      if (!team) {
+        res.status(404).json({ message: 'Team not found' });
         return;
       }
 
@@ -256,6 +270,86 @@ export class FinalReviewController {
       res.status(200).json({ message: 'Review status updated', review: updatedReview });
     } catch (error) {
       logger.error('Error updating review status', { error });
+      if (error instanceof z.ZodError) {
+         res.status(400).json({ message: 'Invalid data', errors: (error as any).errors });
+         return;
+      }
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  }
+
+  public async addProfessorEvaluation(req: AuthRequest, res: Response): Promise<void> {
+    try {
+      const profId = req.user?.id;
+      const reviewId = req.params.id as string;
+
+      if (!profId) {
+        res.status(401).json({ message: 'Unauthorized' });
+        return;
+      }
+
+      const parsedData = evaluateIndividualSchema.parse(req.body);
+
+      const review = await prisma.finalReview.findUnique({
+        where: { id: reviewId },
+        include: { team: true }
+      });
+
+      if (!review || !review.team) {
+        res.status(404).json({ message: 'Review not found' });
+        return;
+      }
+
+      const projectId = review.team.projectId;
+      
+      // Verify if the professor belongs to the project
+      const isProjectProfessor = await prisma.projectProfessor.findFirst({
+        where: { projectId, userId: profId }
+      });
+
+      if (!isProjectProfessor) {
+        res.status(403).json({ message: 'You are not a collaborator on this project' });
+        return;
+      }
+
+      const currentComments: any[] = Array.isArray(review.professor_comments) 
+                                      ? review.professor_comments 
+                                      : [];
+
+      // Update or add the professor's evaluation
+      const existingIdx = currentComments.findIndex(c => c.professorId === profId);
+      if (existingIdx >= 0) {
+        currentComments[existingIdx] = { professorId: profId, status: parsedData.status, comment: parsedData.comment, timestamp: new Date().toISOString() };
+      } else {
+        currentComments.push({ professorId: profId, status: parsedData.status, comment: parsedData.comment, timestamp: new Date().toISOString() });
+      }
+
+      // Logic to auto-update overall status
+      const allProjectProfs = await prisma.projectProfessor.count({
+        where: { projectId }
+      });
+
+      const approvedCount = currentComments.filter(c => c.status === 'APPROVED').length;
+      const rejectedCount = currentComments.filter(c => c.status === 'REJECTED').length;
+
+      let newOverallStatus = review.status;
+      if (rejectedCount > 0) {
+        newOverallStatus = 'REJECTED';
+      } else if (approvedCount >= allProjectProfs) {
+        newOverallStatus = 'APPROVED';
+      }
+
+      const updatedReview = await prisma.finalReview.update({
+        where: { id: reviewId },
+        data: {
+          professor_comments: currentComments,
+          status: newOverallStatus
+        }
+      });
+
+      res.status(200).json({ message: 'Evaluación individual guardada', review: updatedReview });
+    } catch (error) {
+      logger.error('Error in addProfessorEvaluation', { error });
       if (error instanceof z.ZodError) {
          res.status(400).json({ message: 'Invalid data', errors: (error as any).errors });
          return;

@@ -31,7 +31,7 @@ export class ProfessorController {
           role: { name: 'ALUMNO' },
           universityId,
           careerId,
-          team_id: { not: null }
+          team_members: { some: {} }
         }
       });
 
@@ -40,22 +40,18 @@ export class ProfessorController {
           role: { name: 'ALUMNO' },
           universityId,
           careerId,
-          team_id: null
+          team_members: { none: {} }
         }
       });
 
-      // 2. Equipos formados (distinct team_id from students)
-      const distinctTeams = await prisma.user.findMany({
+      // 2. Equipos formados
+      const totalTeams = await prisma.team.count({
         where: {
-          role: { name: 'ALUMNO' },
-          universityId,
-          careerId,
-          team_id: { not: null }
-        },
-        select: { team_id: true },
-        distinct: ['team_id']
+          project: {
+            career_id: careerId
+          }
+        }
       });
-      const totalTeams = distinctTeams.length;
 
       // 3. Propuestas listas (Total final reviews)
       const readyProposals = await prisma.finalReview.count({
