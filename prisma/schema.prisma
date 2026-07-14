@@ -118,6 +118,7 @@ model Skill {
 model CareerSkill {
   careerId String @db.Uuid
   skillId  String @db.Uuid
+  weight   Int    @default(1) // Agregado para clustering ponderado
 
   career Career @relation(fields: [careerId], references: [id], onDelete: Cascade)
   skill  Skill  @relation(fields: [skillId], references: [id], onDelete: Cascade)
