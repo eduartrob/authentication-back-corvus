@@ -129,7 +129,7 @@ export const resolveCareer = async (req: Request, res: Response, next: NextFunct
     }
 
     // Guardar en la DB (Carrera y Skills)
-    let newCareer = career;
+    let newCareer: any = career;
     if (!newCareer) {
       newCareer = await prisma.career.create({
         data: {
