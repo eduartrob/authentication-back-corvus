@@ -83,8 +83,8 @@ export const resolveCareer = async (req: Request, res: Response, next: NextFunct
       });
     }
 
-    if (career) {
-      // Si la encontró, retornamos la carrera y sus habilidades formateadas
+    if (career && career.career_skills && career.career_skills.length > 0) {
+      // Si la encontró y tiene habilidades, retornamos la carrera y sus habilidades formateadas solo como strings
       const skills = career.career_skills.map((cs: any) => cs.skill.name);
       res.status(200).json({ career, skills });
       return;
@@ -93,7 +93,8 @@ export const resolveCareer = async (req: Request, res: Response, next: NextFunct
     // Si NO se encontró, pedimos las habilidades al microservicio llm-back-corvus
     console.log(`🧠 Carrera "${careerName}" no encontrada. Llamando a llm-back-corvus...`);
     
-    let generatedSkills: string[] = [];
+    let generatedSkills: {name: string, weight: number}[] = [];
+
     try {
       const llmUrl = process.env.LLM_URL || 'http://localhost:3003';
       const response = await fetch(`${llmUrl}/api/v1/llm/generate-career-skills`, {
@@ -116,19 +117,31 @@ export const resolveCareer = async (req: Request, res: Response, next: NextFunct
 
     // Asegurarse de tener elementos
     if (generatedSkills.length === 0) {
-      generatedSkills = ["Resolución de problemas", "Trabajo en equipo", "Comunicación", "Liderazgo", "Pensamiento crítico"];
+      generatedSkills = [
+        { name: "Resolución de problemas", weight: 8 },
+        { name: "Trabajo en equipo", weight: 7 },
+        { name: "Comunicación", weight: 6 },
+        { name: "Liderazgo", weight: 6 },
+        { name: "Pensamiento crítico", weight: 8 }
+      ];
     }
 
     // Guardar en la DB (Carrera y Skills)
-    const newCareer = await prisma.career.create({
-      data: {
-        name: careerName,
-        normalized_name: normalizedName
-      }
-    });
+    let newCareer: any = career;
+    if (!newCareer) {
+      newCareer = await prisma.career.create({
+        data: {
+          name: careerName,
+          normalized_name: normalizedName
+        }
+      });
+    }
 
     // Crear/buscar habilidades y asociarlas
-    for (const skillName of generatedSkills) {
+    for (const skillObj of generatedSkills) {
+      const skillName = typeof skillObj === 'string' ? skillObj : skillObj.name;
+      const skillWeight = typeof skillObj === 'string' ? 5 : (skillObj.weight || 5);
+      
       // Ignorar si el string es muy largo
       if (typeof skillName !== 'string' || skillName.length > 50) continue;
       
@@ -140,13 +153,15 @@ export const resolveCareer = async (req: Request, res: Response, next: NextFunct
       await prisma.careerSkill.create({
         data: {
           careerId: newCareer.id,
-          skillId: skill.id
+          skillId: skill.id,
+          weight: skillWeight
         }
       });
     }
 
-    // Retornar la nueva carrera y sus habilidades
-    res.status(200).json({ career: newCareer, skills: generatedSkills });
+    // Retornar la nueva carrera y sus habilidades solo como strings
+    const returnedSkills = generatedSkills.map((s: any) => typeof s === 'string' ? s : s.name);
+    res.status(200).json({ career: newCareer, skills: returnedSkills });
     
   } catch (error) {
     next(error);

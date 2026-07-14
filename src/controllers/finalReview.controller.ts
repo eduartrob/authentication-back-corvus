@@ -13,7 +13,8 @@ const createReviewSchema = z.object({
 const updateReviewStatusSchema = z.object({
   status: z.enum(['APPROVED', 'REJECTED', 'SUMMONED']),
   appointment_date: z.string().datetime().optional(),
-  location_link: z.string().optional()
+  location_link: z.string().optional(),
+  reason: z.string().optional()
 });
 
 export class FinalReviewController {
@@ -65,6 +66,33 @@ export class FinalReviewController {
         }
       });
 
+      // Notify professors of the same career and semester
+      try {
+        const profRole = await prisma.role.findFirst({ where: { name: 'PROFESOR' } });
+        if (profRole && student.careerId && student.semester) {
+          const matchingProfs = await prisma.user.findMany({
+            where: {
+              roleId: profRole.id,
+              careerId: student.careerId,
+              universityId: student.universityId,
+              semester: student.semester
+            }
+          });
+          
+          for (const prof of matchingProfs) {
+            await rabbitmqService.publishPushNotification({
+              userId: prof.id,
+              title: 'Nueva propuesta de proyecto',
+              body: `El equipo de ${student.full_name || student.username} ha enviado su propuesta final.`,
+              type: 'SYSTEM',
+              data: JSON.stringify({ reviewId: newReview.id, type: 'NEW_PROPOSAL' })
+            } as any);
+          }
+        }
+      } catch (qError) {
+        logger.error('Failed to emit notification to professors', { qError });
+      }
+
       res.status(201).json({ message: 'Revisión final enviada con éxito', review: newReview });
     } catch (error) {
       logger.error('Error submitting final review', { error });
@@ -72,6 +100,38 @@ export class FinalReviewController {
          res.status(400).json({ message: 'Invalid data', errors: (error as any).errors });
          return;
       }
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  }
+
+  public async getReviewByMyTeam(req: AuthRequest, res: Response): Promise<void> {
+    try {
+      const studentId = req.user?.id;
+      if (!studentId) {
+        res.status(401).json({ message: 'Unauthorized' });
+        return;
+      }
+
+      const teamId = req.params.teamId as string;
+      if (!teamId) {
+        res.status(400).json({ message: 'Se requiere teamId' });
+        return;
+      }
+
+      // Fetch the latest review for this team
+      const review = await prisma.finalReview.findFirst({
+        where: { team_id: teamId },
+        orderBy: { createdAt: 'desc' }
+      });
+
+      if (!review) {
+        res.status(404).json({ message: 'No hay propuesta enviada para este equipo.' });
+        return;
+      }
+
+      res.status(200).json({ review });
+    } catch (error) {
+      logger.error('Error fetching team review', { error });
       res.status(500).json({ message: 'Internal server error' });
     }
   }
@@ -103,7 +163,24 @@ export class FinalReviewController {
         orderBy: { createdAt: 'desc' }
       });
 
-      res.status(200).json({ reviews });
+      let finalReviews = reviews;
+
+      if (prof.semester) {
+        const studentIds = [...new Set(reviews.map(r => r.student_id))];
+        const students = await prisma.user.findMany({
+          where: { id: { in: studentIds } },
+          select: { id: true, semester: true }
+        });
+        
+        const studentSemesterMap = new Map(students.map(s => [s.id, s.semester]));
+        
+        finalReviews = reviews.filter(r => {
+          const sSemester = studentSemesterMap.get(r.student_id);
+          return sSemester === prof.semester;
+        });
+      }
+
+      res.status(200).json({ reviews: finalReviews });
     } catch (error) {
       logger.error('Error getting final reviews', { error });
       res.status(500).json({ message: 'Internal server error' });
@@ -139,6 +216,25 @@ export class FinalReviewController {
           location_link: parsedData.location_link as string | undefined
         }
       });
+
+      // Log the action to ActivityLog
+      try {
+        let actionStr = 'EVALUATE_PROPOSAL';
+        let detailStr = `Cambió el estado a ${parsedData.status}.`;
+        if (parsedData.reason) {
+           detailStr += ` Motivo: ${parsedData.reason}`;
+        }
+        await prisma.activityLog.create({
+           data: {
+             userId: profId,
+             action: actionStr,
+             detail: detailStr,
+             ipAddress: req.ip || '0.0.0.0'
+           }
+        });
+      } catch (err) {
+        logger.error('Failed to log ActivityLog for review', { err });
+      }
 
       // Emit notification to the student (leader)
       try {
