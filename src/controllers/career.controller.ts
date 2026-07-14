@@ -84,11 +84,8 @@ export const resolveCareer = async (req: Request, res: Response, next: NextFunct
     }
 
     if (career && career.career_skills && career.career_skills.length > 0) {
-      // Si la encontró y tiene habilidades, retornamos la carrera y sus habilidades formateadas
-      const skills = career.career_skills.map((cs: any) => ({
-        name: cs.skill.name,
-        weight: cs.weight || 5
-      }));
+      // Si la encontró y tiene habilidades, retornamos la carrera y sus habilidades formateadas solo como strings
+      const skills = career.career_skills.map((cs: any) => cs.skill.name);
       res.status(200).json({ career, skills });
       return;
     }
@@ -97,6 +94,7 @@ export const resolveCareer = async (req: Request, res: Response, next: NextFunct
     console.log(`🧠 Carrera "${careerName}" no encontrada. Llamando a llm-back-corvus...`);
     
     let generatedSkills: {name: string, weight: number}[] = [];
+
     try {
       const llmUrl = process.env.LLM_URL || 'http://localhost:3003';
       const response = await fetch(`${llmUrl}/api/v1/llm/generate-career-skills`, {
@@ -161,8 +159,9 @@ export const resolveCareer = async (req: Request, res: Response, next: NextFunct
       });
     }
 
-    // Retornar la nueva carrera y sus habilidades
-    res.status(200).json({ career: newCareer, skills: generatedSkills });
+    // Retornar la nueva carrera y sus habilidades solo como strings
+    const returnedSkills = generatedSkills.map((s: any) => typeof s === 'string' ? s : s.name);
+    res.status(200).json({ career: newCareer, skills: returnedSkills });
     
   } catch (error) {
     next(error);
