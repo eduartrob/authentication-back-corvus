@@ -177,55 +177,99 @@ async function main() {
     console.log(`🔄 Usuario admin actualizado: ${emailRey}`);
   }
 
-  // -# 8 crear universidades y carreras de prueba
-  console.log('Creando universidades y carreras de prueba...');
-  const uni = await prisma.university.upsert({
-    where: { name: 'Universidad Politécnica' },
-    update: {},
-    create: {
-      name: 'Universidad Politécnica',
-      acronym: 'UP',
-      registrationCode: '51B5I6',
-    },
-  });
-  console.log(`✅ Universidad de prueba creada: ${uni.name} con código ${uni.registrationCode}`);
+  // -# 8 Seeding Universidades y Carreras desde RENOES
+  console.log('🏫 Iniciando seeding de universidades y carreras...');
+  const fs = require('fs');
+  const path = require('path');
+  const renoesPath = path.join(__dirname, 'renoes_universities_careers.json');
+  let renoesData = [];
+  try {
+    const rawData = fs.readFileSync(renoesPath, 'utf-8');
+    renoesData = JSON.parse(rawData);
+  } catch (err) {
+    console.log('No se pudo leer renoes_universities_careers.json. Se usará vacío.', err);
+  }
 
-  const careersData = [
-    { name: 'Ingeniería en Software', normalized: 'ingenieria_en_software' },
-    { name: 'Ingeniería Industrial', normalized: 'ingenieria_industrial' },
-    { name: 'Licenciatura en Administración', normalized: 'licenciatura_en_administracion' }
-  ];
+  // Helper to normalize strings
+  const normalizeString = (str: string) => str.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
 
-  for (const c of careersData) {
-    let career = await prisma.career.upsert({
-      where: { name: c.name },
-      update: {},
-      create: {
-        name: c.name,
-        normalized_name: c.normalized,
+  let insertedUnis = 0;
+  let insertedCareers = 0;
+  let insertedRelations = 0;
+
+  for (const uniData of renoesData) {
+    const uniName = uniData.name;
+    const careers = uniData.careers || [];
+
+    // Find or create University
+    let university = await prisma.university.findUnique({ where: { name: uniName } });
+    if (!university) {
+      university = await prisma.university.create({
+        data: { name: uniName },
+      });
+      insertedUnis++;
+    }
+
+    // Process Careers
+    for (const careerName of careers) {
+      const normalizedName = normalizeString(careerName);
+      
+      // Find or create Career
+      let career = await prisma.career.findUnique({ where: { normalized_name: normalizedName } });
+      if (!career) {
+        career = await prisma.career.create({
+          data: { 
+            name: careerName,
+            normalized_name: normalizedName
+          },
+        });
+        insertedCareers++;
       }
-    });
-    
-    // Relacionar carrera con la universidad si no existe
-    const existsRelation = await prisma.universityCareer.findUnique({
-      where: {
-        universityId_careerId: {
-          universityId: uni.id,
-          careerId: career.id
-        }
-      }
-    });
 
-    if (!existsRelation) {
-      await prisma.universityCareer.create({
-        data: {
-          universityId: uni.id,
-          careerId: career.id
+      // Link them in UniversityCareer
+      const existingRelation = await prisma.universityCareer.findUnique({
+        where: {
+          universityId_careerId: {
+            universityId: university.id,
+            careerId: career.id
+          }
         }
       });
+
+      if (!existingRelation) {
+        await prisma.universityCareer.create({
+          data: {
+            universityId: university.id,
+            careerId: career.id
+          }
+        });
+        insertedRelations++;
+      }
     }
   }
-  console.log('✅ Carreras de prueba creadas y vinculadas.');
+
+  // Agregamos a UPChiapas manualmente si no tiene Ingeniería en Desarrollo de Software
+  const upChiapas = await prisma.university.findUnique({ where: { name: 'UNIVERSIDAD POLITÉCNICA DE CHIAPAS' } });
+  if (upChiapas) {
+      await prisma.university.update({
+        where: { id: upChiapas.id },
+        data: { registrationCode: '51B5I6' }
+      });
+      const iswName = 'INGENIERÍA EN DESARROLLO DE SOFTWARE';
+      const iswNormalized = normalizeString(iswName);
+      let iswCareer = await prisma.career.findUnique({ where: { normalized_name: iswNormalized } });
+      if (!iswCareer) {
+          iswCareer = await prisma.career.create({ data: { name: iswName, normalized_name: iswNormalized } });
+      }
+      const existingRel = await prisma.universityCareer.findUnique({ where: { universityId_careerId: { universityId: upChiapas.id, careerId: iswCareer.id } } });
+      if (!existingRel) {
+          await prisma.universityCareer.create({ data: { universityId: upChiapas.id, careerId: iswCareer.id } });
+      }
+  }
+
+  console.log(`✅ ${insertedUnis} universidades agregadas o verificadas.`);
+  console.log(`✅ ${insertedCareers} carreras nuevas agregadas.`);
+  console.log(`✅ ${insertedRelations} relaciones universidad-carrera creadas.`);
 
   console.log('🎉 Seeding completado con éxito.');
 }
