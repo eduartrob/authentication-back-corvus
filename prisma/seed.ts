@@ -176,6 +176,57 @@ async function main() {
     });
     console.log(`🔄 Usuario admin actualizado: ${emailRey}`);
   }
+
+  // -# 8 crear universidades y carreras de prueba
+  console.log('Creando universidades y carreras de prueba...');
+  const uni = await prisma.university.upsert({
+    where: { name: 'Universidad Politécnica' },
+    update: {},
+    create: {
+      name: 'Universidad Politécnica',
+      acronym: 'UP',
+      registrationCode: '51B5I6',
+    },
+  });
+  console.log(`✅ Universidad de prueba creada: ${uni.name} con código ${uni.registrationCode}`);
+
+  const careersData = [
+    { name: 'Ingeniería en Software', normalized: 'ingenieria_en_software' },
+    { name: 'Ingeniería Industrial', normalized: 'ingenieria_industrial' },
+    { name: 'Licenciatura en Administración', normalized: 'licenciatura_en_administracion' }
+  ];
+
+  for (const c of careersData) {
+    let career = await prisma.career.upsert({
+      where: { name: c.name },
+      update: {},
+      create: {
+        name: c.name,
+        normalized_name: c.normalized,
+      }
+    });
+    
+    // Relacionar carrera con la universidad si no existe
+    const existsRelation = await prisma.universityCareer.findUnique({
+      where: {
+        universityId_careerId: {
+          universityId: uni.id,
+          careerId: career.id
+        }
+      }
+    });
+
+    if (!existsRelation) {
+      await prisma.universityCareer.create({
+        data: {
+          universityId: uni.id,
+          careerId: career.id
+        }
+      });
+    }
+  }
+  console.log('✅ Carreras de prueba creadas y vinculadas.');
+
   console.log('🎉 Seeding completado con éxito.');
 }
 
