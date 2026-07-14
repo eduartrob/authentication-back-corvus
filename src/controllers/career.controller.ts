@@ -93,7 +93,7 @@ export const resolveCareer = async (req: Request, res: Response, next: NextFunct
     // Si NO se encontró, pedimos las habilidades al microservicio llm-back-corvus
     console.log(`🧠 Carrera "${careerName}" no encontrada. Llamando a llm-back-corvus...`);
     
-    let generatedSkills: {name: string, weight: int}[] = [];
+    let generatedSkills: {name: string, weight: number}[] = [];
     try {
       const llmUrl = process.env.LLM_URL || 'http://localhost:3003';
       const response = await fetch(`${llmUrl}/api/v1/llm/generate-career-skills`, {
