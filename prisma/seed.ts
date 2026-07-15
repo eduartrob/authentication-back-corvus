@@ -265,6 +265,16 @@ async function main() {
       if (!existingRel) {
           await prisma.universityCareer.create({ data: { universityId: upChiapas.id, careerId: iswCareer.id } });
       }
+
+      // Assign to professors
+      const profEmails = ['thegreatteachertester@gmail.com', 'eduartrob2@gmail.com'];
+      await prisma.user.updateMany({
+        where: { email: { in: profEmails } },
+        data: {
+          universityId: upChiapas.id,
+          careerId: iswCareer.id
+        }
+      });
   }
 
   console.log(`✅ ${insertedUnis} universidades agregadas o verificadas.`);

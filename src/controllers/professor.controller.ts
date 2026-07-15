@@ -19,7 +19,11 @@ export class ProfessorController {
             { username: { contains: q, mode: 'insensitive' } },
           ]
         },
-        select: { id: true, full_name: true, username: true, email: true, profile_picture: true },
+        select: { 
+          id: true, full_name: true, username: true, email: true, profile_picture: true,
+          university: { select: { name: true } },
+          career: { select: { name: true } }
+        },
         take: 10
       });
       res.status(200).json({ results: professors });

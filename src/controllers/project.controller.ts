@@ -206,7 +206,9 @@ export class ProjectController {
         activeCollaborations.forEach(c => projectsSet.set(c.project.id, c.project));
 
         const projects = Array.from(projectsSet.values());
-        const pendingInvitations = invitations.map(c => c.project);
+        const pendingInvitations = invitations
+          .map(c => c.project)
+          .filter(p => p.creator_id !== userId); // Prevent own projects showing as invitations
 
         res.status(200).json({ projects, invitations: pendingInvitations });
       }
