@@ -5,6 +5,7 @@ import { authenticateJWT } from '../middlewares/auth.middleware';
 const router = Router();
 const controller = new ProfessorController();
 
+router.get('/search', authenticateJWT, controller.searchProfessors.bind(controller));
 router.get('/dashboard', authenticateJWT, controller.getDashboardStats.bind(controller));
 router.get('/history', authenticateJWT, controller.getHistory.bind(controller));
 

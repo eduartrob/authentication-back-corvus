@@ -4,6 +4,27 @@ import logger from '../utils/logger';
 import prisma from '../utils/prisma';
 
 export class ProfessorController {
+  public async searchProfessors(req: Request, res: Response): Promise<void> {
+    try {
+      const q = req.query.q as string || '';
+      const professors = await prisma.user.findMany({
+        where: {
+          role: { name: { in: ['PROFESOR', 'DOCENTE'] } },
+          OR: [
+            { full_name: { contains: q, mode: 'insensitive' } },
+            { email: { contains: q, mode: 'insensitive' } },
+            { username: { contains: q, mode: 'insensitive' } },
+          ]
+        },
+        select: { id: true, full_name: true, username: true, email: true, profile_picture: true },
+        take: 10
+      });
+      res.status(200).json({ results: professors });
+    } catch (error) {
+      logger.error('Error searching professors', { error });
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  }
   public async getDashboardStats(req: AuthRequest, res: Response): Promise<void> {
     try {
       const profId = req.user?.id;

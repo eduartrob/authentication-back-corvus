@@ -127,7 +127,7 @@ export class ProjectController {
            return;
         }
         await prisma.projectProfessor.create({
-          data: { projectId: project.id, userId: userId }
+          data: { projectId: project.id, userId: userId, isAccepted: true }
         });
         res.status(200).json({ message: 'Te has unido al proyecto como colaborador.', project, isProfessor: true });
       } else {
@@ -190,8 +190,25 @@ export class ProjectController {
           include: { project: true }
         });
 
-        const projects = collaborations.map(c => c.project);
-        res.status(200).json({ projects });
+        const activeCollaborations = collaborations.filter(c => c.isAccepted);
+        const invitations = collaborations.filter(c => !c.isAccepted);
+
+        // Include projects where the user is the creator
+        const createdProjects = await prisma.project.findMany({
+          where: { creator_id: userId }
+        });
+
+        // The user might be a creator, in which case we just send created projects + active collaborations
+        // Wait, the original code just mapped collaborations. Let's merge them properly.
+        // But if creator is not in ProjectProfessor, we should include it.
+        const projectsSet = new Map();
+        createdProjects.forEach(p => projectsSet.set(p.id, p));
+        activeCollaborations.forEach(c => projectsSet.set(c.project.id, c.project));
+
+        const projects = Array.from(projectsSet.values());
+        const pendingInvitations = invitations.map(c => c.project);
+
+        res.status(200).json({ projects, invitations: pendingInvitations });
       }
 
     } catch (error) {
@@ -225,7 +242,7 @@ export class ProjectController {
       }
 
       const collaborators = await prisma.projectProfessor.findMany({
-        where: { projectId: projectId as string },
+        where: { projectId: projectId as string, isAccepted: true },
         include: {
           user: {
             select: {
@@ -302,11 +319,12 @@ export class ProjectController {
       const newCollaborator = await prisma.projectProfessor.create({
         data: {
           projectId: projectId as string,
-          userId: invitee.id
+          userId: invitee.id,
+          isAccepted: false
         }
       });
 
-      res.status(201).json({ message: 'Colaborador añadido exitosamente.', collaborator: newCollaborator });
+      res.status(201).json({ message: 'Invitación enviada exitosamente.', collaborator: newCollaborator });
     } catch (error) {
       logger.error('Error adding collaborator', { error });
       if (error instanceof z.ZodError) {
@@ -403,12 +421,61 @@ export class ProjectController {
             }
           }
         }
-      });
-
       const students = teamMembers.map(tm => tm.user);
       res.status(200).json({ students });
     } catch (error) {
       logger.error('Error fetching project students', { error });
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  }
+
+  public async acceptInvitation(req: AuthRequest, res: Response): Promise<void> {
+    try {
+      const profId = req.user?.id;
+      const projectId = req.params.id;
+      
+      if (!profId) {
+        res.status(401).json({ message: 'Unauthorized' });
+        return;
+      }
+
+      const invitation = await prisma.projectProfessor.findFirst({
+        where: { projectId: projectId as string, userId: profId, isAccepted: false }
+      });
+
+      if (!invitation) {
+        res.status(404).json({ message: 'No tienes una invitación pendiente para este proyecto.' });
+        return;
+      }
+
+      await prisma.projectProfessor.update({
+        where: { projectId_userId: { projectId: projectId as string, userId: profId } },
+        data: { isAccepted: true }
+      });
+
+      res.status(200).json({ message: 'Invitación aceptada.' });
+    } catch (error) {
+      logger.error('Error accepting invitation', { error });
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  }
+
+  public async rejectInvitation(req: AuthRequest, res: Response): Promise<void> {
+    try {
+      const profId = req.user?.id;
+      const projectId = req.params.id;
+      
+      if (!profId) {
+        res.status(401).json({ message: 'Unauthorized' });
+        return;
+      }
+      await prisma.projectProfessor.delete({
+        where: { projectId_userId: { projectId: projectId as string, userId: profId } }
+      });
+
+      res.status(200).json({ message: 'Invitación eliminada.' });
+    } catch (error) {
+      logger.error('Error rejecting invitation', { error });
       res.status(500).json({ message: 'Internal server error' });
     }
   }
