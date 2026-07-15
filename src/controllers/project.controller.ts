@@ -268,8 +268,8 @@ export class ProjectController {
         }
       });
 
-      const collaborators = await prisma.projectProfessor.findMany({
-        where: { projectId: projectId as string, isAccepted: true },
+      const memberships = await prisma.projectProfessor.findMany({
+        where: { projectId: projectId as string },
         include: {
           user: {
             select: {
@@ -283,12 +283,14 @@ export class ProjectController {
         }
       });
 
-      const allCollaborators = collaborators.map(c => c.user);
+      const allCollaborators = memberships.filter(m => m.isAccepted).map(c => c.user);
+      const pendingInvitations = memberships.filter(m => !m.isAccepted).map(c => c.user);
+
       if (project?.creator && !allCollaborators.find(c => c.id === project.creator.id)) {
         allCollaborators.unshift({ ...project.creator, isCreator: true } as any);
       }
 
-      res.status(200).json({ collaborators: allCollaborators });
+      res.status(200).json({ collaborators: allCollaborators, pending: pendingInvitations });
     } catch (error) {
       logger.error('Error fetching collaborators', { error });
       res.status(500).json({ message: 'Internal server error' });
@@ -514,6 +516,38 @@ export class ProjectController {
       res.status(200).json({ message: 'Invitación eliminada.' });
     } catch (error) {
       logger.error('Error rejecting invitation', { error });
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  }
+
+  public async removeCollaborator(req: AuthRequest, res: Response): Promise<void> {
+    try {
+      const requesterId = req.user?.id;
+      const projectId = req.params.id;
+      const targetUserId = req.body.userId;
+      
+      if (!requesterId || !targetUserId) {
+        res.status(400).json({ message: 'Missing parameters' });
+        return;
+      }
+
+      // Allow removal if requester is the creator OR if requester is removing themselves
+      const isCreator = await prisma.project.findFirst({
+        where: { id: projectId as string, creator_id: requesterId }
+      });
+
+      if (!isCreator && requesterId !== targetUserId) {
+        res.status(403).json({ message: 'No tienes permisos para eliminar a este colaborador.' });
+        return;
+      }
+
+      await prisma.projectProfessor.delete({
+        where: { projectId_userId: { projectId: projectId as string, userId: targetUserId } }
+      });
+
+      res.status(200).json({ message: 'Colaborador/invitación eliminado.' });
+    } catch (error) {
+      logger.error('Error removing collaborator', { error });
       res.status(500).json({ message: 'Internal server error' });
     }
   }
