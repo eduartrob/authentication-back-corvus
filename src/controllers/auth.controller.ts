@@ -283,11 +283,9 @@ export class AuthController {
         const missingSkills = skills.filter((s: string) => !foundSkillNames.includes(s));
         
         for (const skillName of missingSkills) {
-          const normalize = (str: string) => str.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
           const newSkill = await prisma.skill.create({
             data: { 
-              name: skillName, 
-              normalized_name: normalize(skillName) 
+              name: skillName
             }
           });
           skillRecords.push(newSkill);
