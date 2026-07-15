@@ -91,9 +91,19 @@ export class ProjectController {
 
   public async joinProject(req: AuthRequest, res: Response): Promise<void> {
     try {
-      const studentId = req.user?.id;
-      if (!studentId) {
+      const userId = req.user?.id;
+      if (!userId) {
         res.status(401).json({ message: 'Unauthorized' });
+        return;
+      }
+
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        include: { role: true }
+      });
+
+      if (!user) {
+        res.status(404).json({ message: 'Usuario no encontrado' });
         return;
       }
 
@@ -108,22 +118,30 @@ export class ProjectController {
         return;
       }
 
-      // Check if student is already in a team for THIS project
-      const existingTeamMember = await prisma.teamMember.findFirst({
-        where: {
-          userId: studentId,
-          team: {
-            projectId: project.id
-          }
+      if (['PROFESOR', 'DOCENTE', 'ADMINISTRADOR'].includes(user.role.name)) {
+        const existingCollab = await prisma.projectProfessor.findFirst({
+          where: { projectId: project.id, userId: userId }
+        });
+        if (existingCollab || project.creator_id === userId) {
+           res.status(400).json({ message: 'Ya eres colaborador en este proyecto.' });
+           return;
         }
-      });
+        await prisma.projectProfessor.create({
+          data: { projectId: project.id, userId: userId }
+        });
+        res.status(200).json({ message: 'Te has unido al proyecto como colaborador.', project, isProfessor: true });
+      } else {
+        const existingTeamMember = await prisma.teamMember.findFirst({
+          where: { userId: userId, team: { projectId: project.id } }
+        });
 
-      if (existingTeamMember) {
-        res.status(400).json({ message: 'Ya perteneces a un equipo en este proyecto.' });
-        return;
+        if (existingTeamMember) {
+          res.status(400).json({ message: 'Ya perteneces a un equipo en este proyecto.' });
+          return;
+        }
+
+        res.status(200).json({ message: 'Código válido. Puedes unirte o crear un equipo.', project, isProfessor: false });
       }
-
-      res.status(200).json({ message: 'Código válido. Puedes unirte o crear un equipo.', project });
     } catch (error) {
       logger.error('Error joining project', { error });
       if (error instanceof z.ZodError) {
