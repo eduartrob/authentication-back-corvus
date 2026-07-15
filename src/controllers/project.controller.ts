@@ -243,6 +243,21 @@ export class ProjectController {
         }
       }
 
+      const project = await prisma.project.findUnique({
+        where: { id: projectId as string },
+        include: {
+          creator: {
+            select: {
+              id: true,
+              full_name: true,
+              username: true,
+              email: true,
+              profile_picture: true
+            }
+          }
+        }
+      });
+
       const collaborators = await prisma.projectProfessor.findMany({
         where: { projectId: projectId as string, isAccepted: true },
         include: {
@@ -258,7 +273,12 @@ export class ProjectController {
         }
       });
 
-      res.status(200).json({ collaborators: collaborators.map(c => c.user) });
+      const allCollaborators = collaborators.map(c => c.user);
+      if (project?.creator && !allCollaborators.find(c => c.id === project.creator.id)) {
+        allCollaborators.unshift(project.creator);
+      }
+
+      res.status(200).json({ collaborators: allCollaborators });
     } catch (error) {
       logger.error('Error fetching collaborators', { error });
       res.status(500).json({ message: 'Internal server error' });
