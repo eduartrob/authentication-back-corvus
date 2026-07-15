@@ -187,7 +187,17 @@ export class ProjectController {
         // Professor: Find projects they created or collaborate on
         const collaborations = await prisma.projectProfessor.findMany({
           where: { userId },
-          include: { project: true }
+          include: {
+            project: {
+              include: {
+                creator: {
+                  select: {
+                    full_name: true,
+                  }
+                }
+              }
+            }
+          }
         });
 
         const activeCollaborations = collaborations.filter(c => c.isAccepted);
