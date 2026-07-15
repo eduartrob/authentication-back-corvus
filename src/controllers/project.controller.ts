@@ -285,7 +285,7 @@ export class ProjectController {
 
       const allCollaborators = collaborators.map(c => c.user);
       if (project?.creator && !allCollaborators.find(c => c.id === project.creator.id)) {
-        allCollaborators.unshift({ ...project.creator, isCreator: true });
+        allCollaborators.unshift({ ...project.creator, isCreator: true } as any);
       }
 
       res.status(200).json({ collaborators: allCollaborators });
