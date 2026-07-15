@@ -11,5 +11,9 @@ router.use(authenticateJWT);
 router.post('/', projectController.createProject.bind(projectController));
 router.post('/join', projectController.joinProject.bind(projectController));
 router.get('/my-projects', projectController.getMyProjects.bind(projectController));
+router.post('/:id/collaborators', projectController.addCollaborator.bind(projectController));
+router.get('/:id/collaborators', projectController.getCollaborators.bind(projectController));
+router.put('/:id', projectController.updateProject.bind(projectController));
+router.get('/:id/students', projectController.getProjectStudents.bind(projectController));
 
 export default router;

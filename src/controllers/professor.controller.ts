@@ -7,6 +7,8 @@ export class ProfessorController {
   public async getDashboardStats(req: AuthRequest, res: Response): Promise<void> {
     try {
       const profId = req.user?.id;
+      const projectId = req.query.projectId as string | undefined;
+
       if (!profId) {
         res.status(401).json({ message: 'Unauthorized' });
         return;
@@ -17,21 +19,46 @@ export class ProfessorController {
         include: { role: true }
       });
 
-      if (!prof || prof.role.name !== 'PROFESOR') {
+      if (!prof || !['PROFESOR', 'DOCENTE', 'ADMINISTRADOR'].includes(prof.role.name)) {
         res.status(403).json({ message: 'Only professors can view this dashboard' });
         return;
+      }
+
+      if (projectId) {
+        // Validate professor has access to this project
+        const projectAccess = await prisma.project.findFirst({
+          where: {
+            id: projectId,
+            OR: [
+              { creator_id: profId },
+              { professors: { some: { userId: profId } } }
+            ]
+          }
+        });
+        if (!projectAccess) {
+          res.status(403).json({ message: 'No tienes acceso a este proyecto' });
+          return;
+        }
       }
 
       const universityId = prof.universityId || undefined;
       const careerId = prof.careerId || undefined;
 
       // 1. Alumnos con equipo y sin equipo
+      const studentsWithTeamCondition = projectId 
+        ? { some: { team: { projectId } } } 
+        : { some: {} };
+        
+      const studentsWithoutTeamCondition = projectId
+        ? { none: { team: { projectId } } }
+        : { none: {} };
+
       const studentsWithTeam = await prisma.user.count({
         where: {
           role: { name: 'ALUMNO' },
           universityId,
           careerId,
-          team_members: { some: {} }
+          team_members: studentsWithTeamCondition
         }
       });
 
@@ -40,36 +67,45 @@ export class ProfessorController {
           role: { name: 'ALUMNO' },
           universityId,
           careerId,
-          team_members: { none: {} }
+          team_members: studentsWithoutTeamCondition
         }
       });
 
       // 2. Equipos formados
       const totalTeams = await prisma.team.count({
         where: {
-          project: {
-            career_id: careerId
-          }
+          project: projectId ? { id: projectId } : { career_id: careerId }
         }
       });
 
       // 3. Propuestas listas (Total final reviews)
+      // Si tenemos projectId, filtramos por project.id a través de team
+      const reviewsWhere: any = {
+        status: { in: ['PENDING', 'APPROVED', 'SUMMONED'] }
+      };
+      if (projectId) {
+        reviewsWhere.team = { projectId };
+      } else {
+        reviewsWhere.university_id = universityId;
+        reviewsWhere.career_id = careerId;
+      }
+
       const readyProposals = await prisma.finalReview.count({
-        where: {
-          university_id: universityId,
-          career_id: careerId,
-          status: { in: ['PENDING', 'APPROVED', 'SUMMONED'] }
-        }
+        where: reviewsWhere
       });
 
       // 4. Alertas (Atención Requerida)
       // Pending reviews
+      const pendingWhere: any = { status: 'PENDING' };
+      if (projectId) {
+        pendingWhere.team = { projectId };
+      } else {
+        pendingWhere.university_id = universityId;
+        pendingWhere.career_id = careerId;
+      }
+
       const pendingReviews = await prisma.finalReview.findMany({
-        where: {
-          university_id: universityId,
-          career_id: careerId,
-          status: 'PENDING'
-        },
+        where: pendingWhere,
         orderBy: { createdAt: 'asc' },
         take: 3
       });
@@ -85,12 +121,16 @@ export class ProfessorController {
 
       // Rejected reviews if we need more
       if (alerts.length < 3) {
+        const rejectedWhere: any = { status: 'REJECTED' };
+        if (projectId) {
+          rejectedWhere.team = { projectId };
+        } else {
+          rejectedWhere.university_id = universityId;
+          rejectedWhere.career_id = careerId;
+        }
+
         const rejectedReviews = await prisma.finalReview.findMany({
-          where: {
-            university_id: universityId,
-            career_id: careerId,
-            status: 'REJECTED'
-          },
+          where: rejectedWhere,
           orderBy: { updatedAt: 'desc' },
           take: 3 - alerts.length
         });
@@ -115,9 +155,9 @@ export class ProfessorController {
         alerts
       });
 
-    } catch (error) {
-      logger.error('Error getting professor dashboard stats', { error });
-      res.status(500).json({ message: 'Internal server error' });
+    } catch (error: any) {
+      logger.error('Error getting professor dashboard stats', { error: error.message, stack: error.stack });
+      res.status(500).json({ message: 'Internal server error', error: error.message });
     }
   }
 

@@ -158,28 +158,55 @@ export class FinalReviewController {
         return;
       }
 
+      const projectId = req.query.projectId as string | undefined;
+
       const prof = await prisma.user.findUnique({
         where: { id: profId },
         include: { role: true }
       });
 
-      if (!prof || prof.role.name !== 'PROFESOR') {
+      if (!prof || !['PROFESOR', 'DOCENTE', 'ADMINISTRADOR'].includes(prof.role.name)) {
         res.status(403).json({ message: 'Only professors can view final reviews' });
         return;
       }
 
-      // Find final reviews matching the professor's career
+      if (projectId) {
+        // Validate professor has access to this project
+        const projectAccess = await prisma.project.findFirst({
+          where: {
+            id: projectId,
+            OR: [
+              { creator_id: profId },
+              { professors: { some: { userId: profId } } }
+            ]
+          }
+        });
+        if (!projectAccess) {
+          res.status(403).json({ message: 'No tienes acceso a este proyecto' });
+          return;
+        }
+      }
+
+      // Find final reviews matching the project or the professor's career
+      const whereCondition: any = {};
+      
+      if (projectId) {
+         whereCondition.team = { projectId };
+      } else {
+         whereCondition.career_id = prof.careerId || undefined;
+         whereCondition.university_id = prof.universityId || undefined;
+      }
+
       const reviews = await prisma.finalReview.findMany({
-        where: { 
-           career_id: prof.careerId || undefined,
-           university_id: prof.universityId || undefined
-        },
-        orderBy: { createdAt: 'desc' }
+        where: whereCondition,
+        orderBy: { createdAt: 'desc' },
+        include: { team: true }
       });
 
       let finalReviews = reviews;
 
-      if (prof.semester) {
+      if (!projectId && prof.semester) {
+        // Only apply semester filtering if we are doing the global career fetch
         const studentIds = [...new Set(reviews.map(r => r.student_id))];
         const students = await prisma.user.findMany({
           where: { id: { in: studentIds } },
