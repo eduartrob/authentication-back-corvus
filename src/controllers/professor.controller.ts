@@ -4,12 +4,15 @@ import logger from '../utils/logger';
 import prisma from '../utils/prisma';
 
 export class ProfessorController {
-  public async searchProfessors(req: Request, res: Response): Promise<void> {
+  public async searchProfessors(req: AuthRequest, res: Response): Promise<void> {
     try {
       const q = req.query.q as string || '';
+      const currentUserId = req.user?.id;
+      
       const professors = await prisma.user.findMany({
         where: {
           role: { name: { in: ['PROFESOR', 'DOCENTE'] } },
+          id: currentUserId ? { not: currentUserId } : undefined,
           OR: [
             { full_name: { contains: q, mode: 'insensitive' } },
             { email: { contains: q, mode: 'insensitive' } },

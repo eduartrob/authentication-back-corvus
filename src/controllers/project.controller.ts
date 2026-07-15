@@ -306,6 +306,11 @@ export class ProjectController {
         return;
       }
 
+      if (invitee.id === profId) {
+        res.status(400).json({ message: 'No puedes invitarte a ti mismo al proyecto.' });
+        return;
+      }
+
       // Check if already a collaborator
       const alreadyCollaborator = await prisma.projectProfessor.findFirst({
         where: { projectId: projectId as string, userId: invitee.id }
