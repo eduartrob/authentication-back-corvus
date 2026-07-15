@@ -421,6 +421,7 @@ export class ProjectController {
             }
           }
         }
+      });
       const students = teamMembers.map(tm => tm.user);
       res.status(200).json({ students });
     } catch (error) {
