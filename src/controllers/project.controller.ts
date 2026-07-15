@@ -140,7 +140,23 @@ export class ProjectController {
           return;
         }
 
-        res.status(200).json({ message: 'Código válido. Puedes unirte o crear un equipo.', project, isProfessor: false });
+        // Autocreate team for the student so they are attached to the project
+        const newTeam = await prisma.team.create({
+          data: {
+            projectId: project.id,
+            name: "Mi Equipo",
+          }
+        });
+        
+        await prisma.teamMember.create({
+          data: {
+            teamId: newTeam.id,
+            userId: userId,
+            is_leader: true
+          }
+        });
+
+        res.status(200).json({ message: 'Código válido. Te has unido al proyecto y se ha creado tu equipo.', project, isProfessor: false });
       }
     } catch (error) {
       logger.error('Error joining project', { error });
