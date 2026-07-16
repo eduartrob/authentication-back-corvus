@@ -241,11 +241,29 @@ export class FinalReviewController {
       const parsedData = updateReviewStatusSchema.parse(req.body);
 
       const review = await prisma.finalReview.findUnique({
-        where: { id: reviewId }
+        where: { id: reviewId },
+        include: { team: true }
       });
 
-      if (!review) {
+      if (!review || !review.team) {
         res.status(404).json({ message: 'Review not found' });
+        return;
+      }
+
+      const projectId = review.team.projectId;
+      
+      const projectAccess = await prisma.project.findFirst({
+        where: {
+          id: projectId,
+          OR: [
+            { creator_id: profId },
+            { professors: { some: { userId: profId } } }
+          ]
+        }
+      });
+
+      if (!projectAccess) {
+        res.status(403).json({ message: 'You are not a collaborator on this project' });
         return;
       }
 
@@ -331,11 +349,17 @@ export class FinalReviewController {
       const projectId = review.team.projectId;
       
       // Verify if the professor belongs to the project
-      const isProjectProfessor = await prisma.projectProfessor.findFirst({
-        where: { projectId, userId: profId }
+      const projectAccess = await prisma.project.findFirst({
+        where: {
+          id: projectId,
+          OR: [
+            { creator_id: profId },
+            { professors: { some: { userId: profId } } }
+          ]
+        }
       });
 
-      if (!isProjectProfessor) {
+      if (!projectAccess) {
         res.status(403).json({ message: 'You are not a collaborator on this project' });
         return;
       }
