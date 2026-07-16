@@ -151,7 +151,9 @@ export class AuthController {
                   email: fullUser.email,
                   name: fullUser.full_name,
                   photoUrl: fullUser.profile_picture,
-                  role: fullUser.role.name
+                  role: fullUser.role.name,
+                  universityId: fullUser.universityId,
+                  careerId: fullUser.careerId
               }
           });
       } catch (error: any) {

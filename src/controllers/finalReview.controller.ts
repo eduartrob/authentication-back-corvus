@@ -4,6 +4,7 @@ import { z } from 'zod';
 import logger from '../utils/logger';
 import prisma from '../utils/prisma';
 import { rabbitmqService } from '../services/rabbitmq.service';
+import axios from 'axios';
 
 const createReviewSchema = z.object({
   team_id: z.string().uuid(),
@@ -293,6 +294,29 @@ export class FinalReviewController {
         });
       } catch (err) {
         logger.error('Failed to log ActivityLog for review', { err });
+      }
+
+      // Notify Clustering Service to store vectors permanently for future plagiarism checks
+      if (parsedData.status === 'APPROVED' || parsedData.status === 'REJECTED') {
+        try {
+          const form = new URLSearchParams();
+          form.append('target_id', review.team_id);
+          form.append('university_id', review.university_id);
+          form.append('career_id', review.career_id);
+          form.append('professor_id', profId);
+          form.append('status', parsedData.status);
+
+          await axios.post(
+            'http://clustering-integrator-service:3002/api/v1/register-historical-proposal',
+            form.toString(),
+            { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
+          );
+          logger.info(`Successfully registered historical proposal for team ${review.team_id}`);
+        } catch (clusterErr: any) {
+          logger.error('Failed to register historical proposal in clustering service', { 
+            error: clusterErr.response?.data || clusterErr.message 
+          });
+        }
       }
 
       // Emit notification to the student (leader)

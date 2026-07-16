@@ -86,3 +86,52 @@ router.get('/activity', async (req, res) => {
 });
 
 export default router;
+
+// Internal endpoint used by clustering service to match a Drive folder owner to a professor
+router.get('/find-professor-by-email', async (req, res) => {
+  try {
+    const email = req.query.email as string;
+    if (!email) {
+      return res.status(400).json({ error: 'email query param required' });
+    }
+
+    const professorRoles = ['PROFESOR', 'DOCENTE'];
+    const roles = await prisma.role.findMany({ where: { name: { in: professorRoles } } });
+    const roleIds = roles.map(r => r.id);
+
+    // Search both primary and secondary email
+    const professor = await prisma.user.findFirst({
+      where: {
+        roleId: { in: roleIds },
+        OR: [
+          { email: email },
+          { secondary_email: email }
+        ]
+      },
+      select: {
+        id: true,
+        email: true,
+        secondary_email: true,
+        full_name: true,
+        universityId: true,
+        careerId: true
+      }
+    });
+
+    if (!professor) {
+      return res.status(404).json({ error: `No professor found with email: ${email}` });
+    }
+
+    return res.json({
+      id: professor.id,
+      email: professor.email,
+      full_name: professor.full_name,
+      university_id: professor.universityId,
+      career_id: professor.careerId
+    });
+  } catch (error) {
+    console.error('Error in GET /admin/find-professor-by-email:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
