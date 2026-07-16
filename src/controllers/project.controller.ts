@@ -131,32 +131,28 @@ export class ProjectController {
         });
         res.status(200).json({ message: 'Te has unido al proyecto como colaborador.', project, isProfessor: true });
       } else {
-        const existingTeamMember = await prisma.teamMember.findFirst({
-          where: { userId: userId, team: { projectId: project.id } }
+        const existingStudent = await prisma.projectStudent.findUnique({
+          where: {
+            projectId_userId: {
+              projectId: project.id,
+              userId: userId
+            }
+          }
         });
 
-        if (existingTeamMember) {
-          res.status(400).json({ message: 'Ya perteneces a un equipo en este proyecto.' });
+        if (existingStudent) {
+          res.status(400).json({ message: 'Ya te has unido a esta clase.' });
           return;
         }
 
-        // Autocreate team for the student so they are attached to the project
-        const newTeam = await prisma.team.create({
+        await prisma.projectStudent.create({
           data: {
             projectId: project.id,
-            name: "Mi Equipo",
-          }
-        });
-        
-        await prisma.teamMember.create({
-          data: {
-            teamId: newTeam.id,
-            userId: userId,
-            is_leader: true
+            userId: userId
           }
         });
 
-        res.status(200).json({ message: 'Código válido. Te has unido al proyecto y se ha creado tu equipo.', project, isProfessor: false });
+        res.status(200).json({ message: 'Código válido. Te has unido a la clase exitosamente.', project, isProfessor: false });
       }
     } catch (error) {
       logger.error('Error joining project', { error });
@@ -187,17 +183,26 @@ export class ProjectController {
       }
 
       if (user.role.name === 'ALUMNO') {
-        // Find projects where the student is in a team
+        // Find projects where the student has joined (ProjectStudent)
+        const projectStudents = await prisma.projectStudent.findMany({
+          where: { userId },
+          include: { project: true }
+        });
+
+        // Also fetch team memberships to attach my_team if it exists
         const teamMemberships = await prisma.teamMember.findMany({
           where: { userId },
-          include: { team: { include: { project: true } } }
+          include: { team: true }
         });
-        
-        const projects = teamMemberships.map(tm => ({
-          ...tm.team.project,
-          my_team: tm.team
-        }));
-        
+
+        const projects = projectStudents.map(ps => {
+          const teamMembership = teamMemberships.find(tm => tm.team.projectId === ps.projectId);
+          return {
+            ...ps.project,
+            my_team: teamMembership ? teamMembership.team : null
+          };
+        });
+
         res.status(200).json({ projects });
       } else {
         // Professor: Find projects they created or collaborate on

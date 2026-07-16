@@ -5,14 +5,21 @@ const router = Router();
 
 router.get('/stats/users', async (req, res) => {
   try {
-    const totalUsers = await prisma.user.count();
+    const universityId = req.query.university_id as string;
+    const careerId = req.query.career_id as string;
+
+    const whereClause: any = {};
+    if (universityId) whereClause.universityId = universityId;
+    if (careerId) whereClause.careerId = careerId;
+
+    const totalUsers = await prisma.user.count({ where: whereClause });
     
     // -# contamos por rol para dar mas detalles
     const studentsRole = await prisma.role.findUnique({ where: { name: 'ALUMNO' } });
     const teachersRole = await prisma.role.findUnique({ where: { name: 'PROFESOR' } });
     
-    const studentsCount = studentsRole ? await prisma.user.count({ where: { roleId: studentsRole.id } }) : 0;
-    const teachersCount = teachersRole ? await prisma.user.count({ where: { roleId: teachersRole.id } }) : 0;
+    const studentsCount = studentsRole ? await prisma.user.count({ where: { ...whereClause, roleId: studentsRole.id } }) : 0;
+    const teachersCount = teachersRole ? await prisma.user.count({ where: { ...whereClause, roleId: teachersRole.id } }) : 0;
 
     return res.json({
       success: true,
@@ -53,10 +60,20 @@ router.get('/activity', async (req, res) => {
   try {
     const limit = parseInt(req.query.limit as string) || 50;
     const offset = parseInt(req.query.offset as string) || 0;
+    const universityId = req.query.university_id as string;
+    const careerId = req.query.career_id as string;
+
+    const whereClause: any = {};
+    if (universityId || careerId) {
+      whereClause.user = {};
+      if (universityId) whereClause.user.universityId = universityId;
+      if (careerId) whereClause.user.careerId = careerId;
+    }
     
     const logs = await prisma.activityLog.findMany({
       take: limit,
       skip: offset,
+      where: whereClause,
       orderBy: { createdAt: 'desc' },
       include: {
         user: {
@@ -70,7 +87,7 @@ router.get('/activity', async (req, res) => {
       }
     });
     
-    const total = await prisma.activityLog.count();
+    const total = await prisma.activityLog.count({ where: whereClause });
     
     return res.json({
       success: true,
