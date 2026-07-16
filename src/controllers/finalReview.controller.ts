@@ -12,13 +12,13 @@ const createReviewSchema = z.object({
 
 const updateReviewStatusSchema = z.object({
   status: z.enum(['APPROVED', 'REJECTED', 'SUMMONED']),
-  appointment_date: z.string().datetime().optional(),
+  appointment_date: z.string().optional(),
   location_link: z.string().optional(),
   reason: z.string().optional()
 });
 
 const evaluateIndividualSchema = z.object({
-  status: z.enum(['APPROVED', 'REJECTED']),
+  is_approved: z.boolean(),
   comment: z.string().optional()
 });
 
@@ -316,6 +316,7 @@ export class FinalReviewController {
       }
 
       const parsedData = evaluateIndividualSchema.parse(req.body);
+      const evalStatus = parsedData.is_approved ? 'APPROVED' : 'REJECTED';
 
       const review = await prisma.finalReview.findUnique({
         where: { id: reviewId },
@@ -346,9 +347,9 @@ export class FinalReviewController {
       // Update or add the professor's evaluation
       const existingIdx = currentComments.findIndex(c => c.professorId === profId);
       if (existingIdx >= 0) {
-        currentComments[existingIdx] = { professorId: profId, status: parsedData.status, comment: parsedData.comment, timestamp: new Date().toISOString() };
+        currentComments[existingIdx] = { professorId: profId, status: evalStatus, comment: parsedData.comment, timestamp: new Date().toISOString() };
       } else {
-        currentComments.push({ professorId: profId, status: parsedData.status, comment: parsedData.comment, timestamp: new Date().toISOString() });
+        currentComments.push({ professorId: profId, status: evalStatus, comment: parsedData.comment, timestamp: new Date().toISOString() });
       }
 
       // Logic to auto-update overall status
