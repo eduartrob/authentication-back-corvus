@@ -93,5 +93,22 @@ router.get('/projects/:projectId/team-size', async (req, res) => {
     return res.status(500).json({ error: 'Error consultando proyecto' });
   }
 });
+router.patch('/projects/:projectId/team-size', async (req, res) => {
+  const { projectId } = req.params;
+  const { team_size } = req.body;
+  if (!team_size || typeof team_size !== 'number') {
+    return res.status(400).json({ error: 'team_size invalido' });
+  }
+  try {
+    const project = await (prisma as any).project.update({
+      where: { id: projectId },
+      data: { team_size }
+    });
+    return res.json({ success: true, team_size: project.team_size });
+  } catch (error) {
+    console.error('[internal/projects/team-size] Patch Error:', error);
+    return res.status(500).json({ error: 'Error actualizando proyecto' });
+  }
+});
 
 export default router;

@@ -81,11 +81,16 @@ export class ProfessorController {
         ? { none: { team: { projectId } } }
         : { none: {} };
 
+      const projectStudentCondition = projectId 
+        ? { some: { projectId } } 
+        : undefined;
+
       const studentsWithTeam = await prisma.user.count({
         where: {
           role: { name: 'ALUMNO' },
           universityId,
           careerId,
+          project_students: projectStudentCondition,
           team_members: studentsWithTeamCondition
         }
       });
@@ -95,6 +100,7 @@ export class ProfessorController {
           role: { name: 'ALUMNO' },
           universityId,
           careerId,
+          project_students: projectStudentCondition,
           team_members: studentsWithoutTeamCondition
         }
       });
