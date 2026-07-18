@@ -73,4 +73,25 @@ router.post('/activity-log', async (req, res) => {
   }
 });
 
+router.get('/projects/:projectId/team-size', async (req, res) => {
+  const { projectId } = req.params;
+  try {
+    const project = await (prisma as any).project.findUnique({
+      where: { id: projectId },
+      select: { id: true, name: true, team_size: true }
+    });
+    if (!project) {
+      return res.status(404).json({ error: 'Proyecto no encontrado' });
+    }
+    return res.json({
+      projectId: project.id,
+      name: project.name,
+      team_size: project.team_size
+    });
+  } catch (error) {
+    console.error('[internal/projects/team-size] Error:', error);
+    return res.status(500).json({ error: 'Error consultando proyecto' });
+  }
+});
+
 export default router;

@@ -305,10 +305,13 @@ export class ProjectController {
       });
 
       const allCollaborators = memberships.filter(m => m.isAccepted).map(c => c.user);
-      const pendingInvitations = memberships.filter(m => !m.isAccepted).map(c => c.user);
+      let pendingInvitations = memberships.filter(m => !m.isAccepted).map(c => c.user);
 
-      if (project?.creator && !allCollaborators.find(c => c.id === project.creator.id)) {
-        allCollaborators.unshift({ ...project.creator, isCreator: true } as any);
+      if (project?.creator) {
+        if (!allCollaborators.find(c => c.id === project.creator.id)) {
+          allCollaborators.unshift({ ...project.creator, isCreator: true } as any);
+        }
+        pendingInvitations = pendingInvitations.filter(u => u.id !== project.creator.id);
       }
 
       res.status(200).json({ collaborators: allCollaborators, pending: pendingInvitations });
