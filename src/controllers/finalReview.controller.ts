@@ -81,6 +81,27 @@ export class FinalReviewController {
         }
       });
 
+      // Notify Clustering Service to store vectors immediately in Qdrant for plagiarism protection
+      try {
+        const form = new URLSearchParams();
+        form.append('target_id', parsedData.team_id);
+        form.append('university_id', student.universityId || 'General');
+        form.append('career_id', student.careerId || 'General');
+        form.append('professor_id', 'General');
+        form.append('status', 'SUBMITTED');
+
+        await axios.post(
+          'http://clustering-integrator-service:3002/api/v1/register-historical-proposal',
+          form.toString(),
+          { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
+        );
+        logger.info(`Successfully registered historical proposal for team ${parsedData.team_id} upon submission`);
+      } catch (clusterErr: any) {
+        logger.error('Failed to register historical proposal in clustering service upon submission', { 
+          error: clusterErr.response?.data || clusterErr.message 
+        });
+      }
+
       // Notify professors of the same career and semester
       try {
         const profRole = await prisma.role.findFirst({ where: { name: 'PROFESOR' } });
@@ -296,28 +317,7 @@ export class FinalReviewController {
         logger.error('Failed to log ActivityLog for review', { err });
       }
 
-      // Notify Clustering Service to store vectors permanently for future plagiarism checks
-      if (parsedData.status === 'APPROVED' || parsedData.status === 'REJECTED') {
-        try {
-          const form = new URLSearchParams();
-          form.append('target_id', review.team_id);
-          form.append('university_id', review.university_id);
-          form.append('career_id', review.career_id);
-          form.append('professor_id', profId);
-          form.append('status', parsedData.status);
-
-          await axios.post(
-            'http://clustering-integrator-service:3002/api/v1/register-historical-proposal',
-            form.toString(),
-            { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
-          );
-          logger.info(`Successfully registered historical proposal for team ${review.team_id}`);
-        } catch (clusterErr: any) {
-          logger.error('Failed to register historical proposal in clustering service', { 
-            error: clusterErr.response?.data || clusterErr.message 
-          });
-        }
-      }
+      // (El almacenamiento de Qdrant ahora ocurre al enviar la propuesta, no aquí)
 
       // Emit notification to the student (leader)
       try {
