@@ -233,7 +233,14 @@ export class ProjectController {
 
         // Include projects where the user is the creator
         const createdProjects = await prisma.project.findMany({
-          where: { creator_id: userId }
+          where: { creator_id: userId },
+          include: {
+            creator: {
+              select: {
+                full_name: true,
+              }
+            }
+          }
         });
 
         // The user might be a creator, in which case we just send created projects + active collaborations
