@@ -96,13 +96,14 @@ router.get('/projects/:projectId/team-size', async (req, res) => {
 router.patch('/projects/:projectId/team-size', async (req, res) => {
   const { projectId } = req.params;
   const { team_size } = req.body;
-  if (!team_size || typeof team_size !== 'number') {
+  const parsedTeamSize = typeof team_size === 'number' ? team_size : parseInt(team_size);
+  if (!parsedTeamSize || isNaN(parsedTeamSize)) {
     return res.status(400).json({ error: 'team_size invalido' });
   }
   try {
     const project = await (prisma as any).project.update({
       where: { id: projectId },
-      data: { team_size }
+      data: { team_size: parsedTeamSize }
     });
     return res.json({ success: true, team_size: project.team_size });
   } catch (error) {
