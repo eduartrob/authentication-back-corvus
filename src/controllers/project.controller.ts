@@ -252,6 +252,7 @@ export class ProjectController {
       }
 
     } catch (error) {
+      console.error('Error getting projects stack:', error);
       logger.error('Error getting projects', { error });
       res.status(500).json({ message: 'Internal server error' });
     }
