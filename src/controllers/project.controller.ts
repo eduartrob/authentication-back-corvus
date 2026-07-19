@@ -10,7 +10,9 @@ const createProjectSchema = z.object({
   description: z.string().optional(),
   team_size: z.number().int().min(1).max(10).default(4),
   career_id: z.string().uuid().optional(),
-  semester: z.string().optional()
+  semester: z.string().optional(),
+  theme_color: z.string().optional(),
+  theme_pattern: z.string().optional()
 });
 
 const joinProjectSchema = z.object({
@@ -22,7 +24,10 @@ const addCollaboratorSchema = z.object({
 });
 
 const updateProjectSchema = z.object({
-  name: z.string().min(1, 'El nombre no puede estar vacío').optional()
+  name: z.string().min(1, 'El nombre no puede estar vacío').optional(),
+  description: z.string().optional(),
+  theme_color: z.string().optional(),
+  theme_pattern: z.string().optional()
 });
 
 export class ProjectController {
@@ -66,7 +71,9 @@ export class ProjectController {
           team_size: parsedData.team_size,
           career_id: parsedData.career_id || prof.careerId,
           semester: parsedData.semester || prof.semester,
-          creator_id: profId
+          creator_id: profId,
+          theme_color: parsedData.theme_color,
+          theme_pattern: parsedData.theme_pattern
         }
       });
 
@@ -427,7 +434,10 @@ export class ProjectController {
       const updatedProject = await prisma.project.update({
         where: { id: projectId as string },
         data: {
-          name: parsedData.name
+          name: parsedData.name,
+          description: parsedData.description,
+          theme_color: parsedData.theme_color,
+          theme_pattern: parsedData.theme_pattern
         }
       });
 

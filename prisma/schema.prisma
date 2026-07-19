@@ -227,6 +227,9 @@ model Project {
   creator_id String @db.Uuid
   creator    User   @relation(fields: [creator_id], references: [id])
 
+  theme_color   String? @db.VarChar(7) // e.g. #FFFFFF
+  theme_pattern String? @db.VarChar(50) // e.g. pattern_dots
+
   professors ProjectProfessor[]
   students   ProjectStudent[]
   teams      Team[]
