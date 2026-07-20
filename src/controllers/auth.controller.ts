@@ -11,7 +11,7 @@ import { normalizeUniversity, normalizeCareer } from '../utils/normalizer';
 
 const authService = new AuthService();
 import { rabbitmqService } from '../services/rabbitmq.service';
-
+import { AuthRequest } from '../middlewares/auth.middleware';
 const registerSchema = z.object({
   email: z.string().email(),
   password: z.string().min(6),
@@ -151,7 +151,9 @@ export class AuthController {
                   email: fullUser.email,
                   name: fullUser.full_name,
                   photoUrl: fullUser.profile_picture,
-                  role: fullUser.role.name
+                  role: fullUser.role.name,
+                  universityId: fullUser.universityId,
+                  careerId: fullUser.careerId
               }
           });
       } catch (error: any) {
@@ -283,11 +285,9 @@ export class AuthController {
         const missingSkills = skills.filter((s: string) => !foundSkillNames.includes(s));
         
         for (const skillName of missingSkills) {
-          const normalize = (str: string) => str.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
           const newSkill = await prisma.skill.create({
             data: { 
-              name: skillName, 
-              normalized_name: normalize(skillName) 
+              name: skillName
             }
           });
           skillRecords.push(newSkill);
@@ -696,6 +696,27 @@ export class AuthController {
       res.status(200).json({ message: 'Cuenta eliminada exitosamente. Tu historial ha sido anonimizado.' });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
+    }
+  }
+
+  async getHistory(req: AuthRequest, res: Response): Promise<void> {
+    try {
+      const userId = req.user?.id;
+      if (!userId) {
+        res.status(401).json({ message: 'Unauthorized' });
+        return;
+      }
+
+      const logs = await prisma.activityLog.findMany({
+        where: { userId },
+        orderBy: { createdAt: 'desc' },
+        take: 50 // Limit to latest 50
+      });
+
+      res.status(200).json({ history: logs });
+    } catch (error) {
+      logger.error('Error fetching user history', { error });
+      res.status(500).json({ message: 'Internal server error' });
     }
   }
 }

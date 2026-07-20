@@ -73,4 +73,43 @@ router.post('/activity-log', async (req, res) => {
   }
 });
 
+router.get('/projects/:projectId/team-size', async (req, res) => {
+  const { projectId } = req.params;
+  try {
+    const project = await (prisma as any).project.findUnique({
+      where: { id: projectId },
+      select: { id: true, name: true, team_size: true }
+    });
+    if (!project) {
+      return res.status(404).json({ error: 'Proyecto no encontrado' });
+    }
+    return res.json({
+      projectId: project.id,
+      name: project.name,
+      team_size: project.team_size
+    });
+  } catch (error) {
+    console.error('[internal/projects/team-size] Error:', error);
+    return res.status(500).json({ error: 'Error consultando proyecto' });
+  }
+});
+router.patch('/projects/:projectId/team-size', async (req, res) => {
+  const { projectId } = req.params;
+  const { team_size } = req.body;
+  const parsedTeamSize = typeof team_size === 'number' ? team_size : parseInt(team_size);
+  if (!parsedTeamSize || isNaN(parsedTeamSize)) {
+    return res.status(400).json({ error: 'team_size invalido' });
+  }
+  try {
+    const project = await (prisma as any).project.update({
+      where: { id: projectId },
+      data: { team_size: parsedTeamSize }
+    });
+    return res.json({ success: true, team_size: project.team_size });
+  } catch (error) {
+    console.error('[internal/projects/team-size] Patch Error:', error);
+    return res.status(500).json({ error: 'Error actualizando proyecto' });
+  }
+});
+
 export default router;

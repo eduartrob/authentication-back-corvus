@@ -117,13 +117,8 @@ export const resolveCareer = async (req: Request, res: Response, next: NextFunct
 
     // Asegurarse de tener elementos
     if (generatedSkills.length === 0) {
-      generatedSkills = [
-        { name: "Resolución de problemas", weight: 8 },
-        { name: "Trabajo en equipo", weight: 7 },
-        { name: "Comunicación", weight: 6 },
-        { name: "Liderazgo", weight: 6 },
-        { name: "Pensamiento crítico", weight: 8 }
-      ];
+      res.status(503).json({ message: 'El servicio de IA no pudo generar las habilidades en este momento. Inténtalo de nuevo más tarde.' });
+      return;
     }
 
     // Guardar en la DB (Carrera y Skills)
