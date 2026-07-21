@@ -192,7 +192,7 @@ export class ProjectController {
       if (user.role.name === 'ALUMNO') {
         // Find projects where the student has joined (ProjectStudent)
         const projectStudents = await prisma.projectStudent.findMany({
-          where: { userId },
+          where: { userId, project: { is_archived: false } },
           include: { project: true }
         });
 
@@ -214,7 +214,7 @@ export class ProjectController {
       } else {
         // Professor: Find projects they created or collaborate on
         const collaborations = await prisma.projectProfessor.findMany({
-          where: { userId },
+          where: { userId, project: { is_archived: false } },
           include: {
             project: {
               include: {
@@ -233,7 +233,7 @@ export class ProjectController {
 
         // Include projects where the user is the creator
         const createdProjects = await prisma.project.findMany({
-          where: { creator_id: userId },
+          where: { creator_id: userId, is_archived: false },
           include: {
             creator: {
               select: {
@@ -590,6 +590,106 @@ export class ProjectController {
       res.status(200).json({ message: 'Colaborador/invitación eliminado.' });
     } catch (error) {
       logger.error('Error removing collaborator', { error });
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  public async getArchivedProjects(req: AuthRequest, res: Response): Promise<void> {
+    try {
+      const userId = req.user?.id;
+      if (!userId) {
+        res.status(401).json({ message: 'Unauthorized' });
+        return;
+      }
+
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        include: { role: true }
+      });
+
+      if (!user) {
+        res.status(404).json({ message: 'User not found' });
+        return;
+      }
+
+      if (user.role.name === 'ALUMNO') {
+        const projectStudents = await prisma.projectStudent.findMany({
+          where: { userId, project: { is_archived: true } },
+          include: { project: true }
+        });
+
+        const teamMemberships = await prisma.teamMember.findMany({
+          where: { userId },
+          include: { team: true }
+        });
+
+        const projects = projectStudents.map(ps => {
+          const teamMembership = teamMemberships.find(tm => tm.team.projectId === ps.projectId);
+          return {
+            ...ps.project,
+            my_team: teamMembership ? teamMembership.team : null
+          };
+        });
+
+        res.status(200).json({ projects });
+      } else {
+        const collaborations = await prisma.projectProfessor.findMany({
+          where: { userId, project: { is_archived: true } },
+          include: {
+            project: {
+              include: {
+                creator: { select: { full_name: true } }
+              }
+            }
+          }
+        });
+
+        const createdProjects = await prisma.project.findMany({
+          where: { creator_id: userId, is_archived: true },
+          include: {
+            creator: { select: { full_name: true } }
+          }
+        });
+
+        const projectsSet = new Map();
+        createdProjects.forEach(p => projectsSet.set(p.id, p));
+        collaborations.filter(c => c.isAccepted).forEach(c => projectsSet.set(c.projectId, c.project));
+
+        res.status(200).json({ projects: Array.from(projectsSet.values()) });
+      }
+    } catch (error) {
+      console.error(error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  }
+
+  public async archiveProjects(req: AuthRequest, res: Response): Promise<void> {
+    try {
+      const userId = req.user?.id;
+      if (!userId) {
+        res.status(401).json({ message: 'Unauthorized' });
+        return;
+      }
+
+      const { projectIds } = req.body;
+      if (!Array.isArray(projectIds) || projectIds.length === 0) {
+        res.status(400).json({ message: 'No project IDs provided' });
+        return;
+      }
+
+      // Check if user is PROFESOR or ADMINISTRADOR? The user said "del lado de alumnos ellos tambien podran seleccionar uno y archivarlo"
+      // Which means students can also archive projects. And it sets is_archived = true.
+      
+      await prisma.project.updateMany({
+        where: {
+          id: { in: projectIds }
+        },
+        data: {
+          is_archived: true
+        }
+      });
+
+      res.status(200).json({ message: 'Projects archived successfully' });
+    } catch (error) {
+      console.error(error);
       res.status(500).json({ message: 'Internal server error' });
     }
   }

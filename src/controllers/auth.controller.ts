@@ -663,38 +663,113 @@ export class AuthController {
 
   async deleteAccount(req: Request, res: Response) {
     try {
-      const user = (req as any).user;
-      if (!user) {
+      const userReq = (req as any).user;
+      if (!userReq) {
         res.status(401).json({ error: 'No autorizado' });
         return;
       }
 
-      // La eliminación en cascada de Prisma se encargará de borrar:
-      // - user_skills
-      // - linked_folders
-      // - llm_sessions
-      // - requests (a través de la DB si es que está configurado cascade)
-      // Y establecerá en NULL el userId en activity_logs
+      // Obtener info completa del usuario
+      const dbUser = await prisma.user.findUnique({
+        where: { id: userReq.id },
+        include: {
+          role: true,
+          team_members: true,
+          project_collaborations: true,
+        }
+      });
+
+      if (!dbUser) {
+        res.status(404).json({ error: 'Usuario no encontrado' });
+        return;
+      }
 
       // Delete photo from Cloudinary
-      const cloudinary = require('cloudinary').v2;
-      cloudinary.config({
-        cloud_name: 'zpqp1swt',
-        api_key: '594268643178644',
-        api_secret: 'q-zoYZBI_Oblx72m7YlTM16KLTQ',
-      });
-      try {
-        await cloudinary.uploader.destroy(`corvus_profiles/${user.id}`);
-      } catch (cloudinaryError) {
-        console.error('Error deleting photo during account deletion:', cloudinaryError);
+      if (dbUser.profile_picture) {
+        const cloudinary = require('cloudinary').v2;
+        cloudinary.config({
+          cloud_name: 'zpqp1swt',
+          api_key: '594268643178644',
+          api_secret: 'q-zoYZBI_Oblx72m7YlTM16KLTQ',
+        });
+        try {
+          await cloudinary.uploader.destroy(`corvus_profiles/${dbUser.id}`);
+        } catch (cloudinaryError) {
+          console.error('Error deleting photo during account deletion:', cloudinaryError);
+        }
       }
-      
-      await prisma.user.delete({
-        where: { id: user.id },
+
+      const roleName = dbUser.role.name;
+
+      if (roleName === 'ALUMNO') {
+        for (const tm of dbUser.team_members) {
+          if (tm.is_leader) {
+            // Reasignar líder
+            const nextMember = await prisma.teamMember.findFirst({
+              where: { teamId: tm.teamId, userId: { not: dbUser.id } },
+              orderBy: { userId: 'asc' }
+            });
+            
+            if (nextMember) {
+              await prisma.teamMember.update({
+                where: { teamId_userId: { teamId: nextMember.teamId, userId: nextMember.userId } },
+                data: { is_leader: true }
+              });
+            } else {
+              // Si no hay más miembros, borrar revisiones y equipo
+              await prisma.finalReview.deleteMany({ where: { team_id: tm.teamId } });
+              await prisma.team.delete({ where: { id: tm.teamId } });
+            }
+          }
+        }
+        // Quitar al alumno de los equipos y proyectos
+        await prisma.teamMember.deleteMany({ where: { userId: dbUser.id } });
+        await prisma.projectStudent.deleteMany({ where: { userId: dbUser.id } });
+      } else if (roleName === 'PROFESOR' || roleName === 'ADMINISTRADOR') {
+        // Lógica de profesor: archivar proyectos si se quedan sin profesores activos
+        for (const collab of dbUser.project_collaborations) {
+          const otherActiveProfs = await prisma.projectProfessor.count({
+            where: { 
+              projectId: collab.projectId, 
+              userId: { not: dbUser.id },
+              user: { is_active: true }
+            }
+          });
+          
+          if (otherActiveProfs === 0) {
+            await prisma.project.update({
+              where: { id: collab.projectId },
+              data: { is_archived: true }
+            });
+          }
+        }
+      }
+
+      // Anonimización y Soft Delete
+      const randomHash = `deleted_${Date.now()}_${Math.random().toString(36).substring(2, 9)}@corvus.local`;
+      await prisma.user.update({
+        where: { id: dbUser.id },
+        data: {
+          is_active: false,
+          full_name: 'Usuario Eliminado',
+          email: randomHash,
+          secondary_email: null,
+          google_email: null,
+          password_hash: '',
+          enrollment_id: null,
+          profile_picture: null,
+          bio: '',
+          tags: [],
+          google_access_token: null,
+          google_refresh_token: null,
+          universityId: null,
+          careerId: null
+        }
       });
 
       res.status(200).json({ message: 'Cuenta eliminada exitosamente. Tu historial ha sido anonimizado.' });
     } catch (error: any) {
+      console.error(error);
       res.status(500).json({ error: error.message });
     }
   }

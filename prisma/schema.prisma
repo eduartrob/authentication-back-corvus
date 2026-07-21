@@ -60,6 +60,7 @@ model User {
   verification_expires_at DateTime?
   google_email            String?
   secondary_is_verified   Boolean   @default(false)
+  is_active               Boolean   @default(true)
 
   team_members           TeamMember[]
   projects_created       Project[]
@@ -233,6 +234,8 @@ model Project {
   professors ProjectProfessor[]
   students   ProjectStudent[]
   teams      Team[]
+
+  is_archived Boolean @default(false)
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
