@@ -695,4 +695,34 @@ export class ProjectController {
       res.status(500).json({ message: 'Internal server error' });
     }
   }
+
+  public async unarchiveProjects(req: AuthRequest, res: Response): Promise<void> {
+    try {
+      const userId = req.user?.id;
+      if (!userId) {
+        res.status(401).json({ message: 'Unauthorized' });
+        return;
+      }
+
+      const { projectIds } = req.body;
+      if (!Array.isArray(projectIds) || projectIds.length === 0) {
+        res.status(400).json({ message: 'No project IDs provided' });
+        return;
+      }
+      
+      await prisma.project.updateMany({
+        where: {
+          id: { in: projectIds }
+        },
+        data: {
+          is_archived: false
+        }
+      });
+
+      res.status(200).json({ message: 'Projects unarchived successfully' });
+    } catch (error) {
+      console.error(error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  }
 }

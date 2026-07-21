@@ -13,6 +13,7 @@ router.post('/join', projectController.joinProject.bind(projectController));
 router.get('/my-projects', projectController.getMyProjects.bind(projectController));
 router.get('/archived', projectController.getArchivedProjects.bind(projectController));
 router.post('/archive', projectController.archiveProjects.bind(projectController));
+router.post('/unarchive', projectController.unarchiveProjects.bind(projectController));
 router.post('/:id/collaborators', projectController.addCollaborator.bind(projectController));
 router.get('/:id/collaborators', projectController.getCollaborators.bind(projectController));
 router.put('/:id', projectController.updateProject.bind(projectController));
