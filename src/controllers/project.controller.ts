@@ -592,6 +592,8 @@ export class ProjectController {
       logger.error('Error removing collaborator', { error });
       res.status(500).json({ message: 'Internal server error' });
     }
+  }
+
   public async getArchivedProjects(req: AuthRequest, res: Response): Promise<void> {
     try {
       const userId = req.user?.id;
