@@ -243,6 +243,53 @@ export class FinalReviewController {
         });
       }
 
+      // Fetch PRO statuses and sort
+      try {
+        const finalStudentIds = [...new Set(finalReviews.map(r => r.student_id))];
+        const finalStudents = await prisma.user.findMany({
+          where: { id: { in: finalStudentIds } },
+          select: { id: true, email: true }
+        });
+        
+        const emailToStudentId = new Map(finalStudents.map(s => [s.email, s.id]));
+        const emails = finalStudents.map(s => s.email);
+
+        let proStudentIds = new Set<string>();
+        if (emails.length > 0) {
+          try {
+            const resp = await axios.post('http://payments-back-corvus:3005/pagos/suscripciones/batch-verificar', {
+              emails
+            });
+            const proStatusMap = resp.data; // { 'email1': true, 'email2': false }
+            for (const [email, isPro] of Object.entries(proStatusMap)) {
+              if (isPro) {
+                const sid = emailToStudentId.get(email);
+                if (sid) proStudentIds.add(sid);
+              }
+            }
+          } catch (paymentErr) {
+            logger.error('Failed to fetch PRO statuses from payments service', { error: paymentErr });
+          }
+        }
+
+        // Attach isPro and sort
+        const enrichedReviews = finalReviews.map(r => ({
+          ...r,
+          isPro: proStudentIds.has(r.student_id)
+        }));
+
+        enrichedReviews.sort((a, b) => {
+          if (a.isPro && !b.isPro) return -1;
+          if (!a.isPro && b.isPro) return 1;
+          return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(); // oldest first
+        });
+        
+        res.status(200).json({ reviews: enrichedReviews });
+        return;
+      } catch (err) {
+        logger.error('Error in PRO sorting', { error: err });
+      }
+
       res.status(200).json({ reviews: finalReviews });
     } catch (error) {
       logger.error('Error getting final reviews', { error });
