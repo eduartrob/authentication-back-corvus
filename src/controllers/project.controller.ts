@@ -4,6 +4,8 @@ import { z } from 'zod';
 import logger from '../utils/logger';
 import prisma from '../utils/prisma';
 import crypto from 'crypto';
+import { rabbitmqService } from '../services/rabbitmq.service';
+
 
 const createProjectSchema = z.object({
   name: z.string(),
@@ -158,6 +160,29 @@ export class ProjectController {
             userId: userId
           }
         });
+
+        // -# Notificar a todos los profesores del proyecto que un alumno se unio
+        try {
+          const projectWithProfs = await prisma.project.findUnique({
+            where: { id: project.id },
+            include: { professors: true }
+          });
+          const profIds = new Set<string>();
+          if (project.creator_id) profIds.add(project.creator_id);
+          projectWithProfs?.professors.forEach(p => profIds.add(p.userId));
+
+          for (const profId of profIds) {
+            await rabbitmqService.publishPushNotification({
+              user_id: profId,
+              title: 'Nuevo alumno en tu proyecto',
+              body: `${user.full_name || user.username || 'Un alumno'} se ha unido al proyecto "${project.name}".`,
+              type: 'project_event',
+              deepLink: `/project/${project.id}?tab=2`
+            });
+          }
+        } catch (notifErr) {
+          logger.error('Error notificando profesores al unirse alumno', { notifErr });
+        }
 
         res.status(200).json({ message: 'Código válido. Te has unido a la clase exitosamente.', project, isProfessor: false });
       }
@@ -402,6 +427,21 @@ export class ProjectController {
         }
       });
 
+      // -# Notificar al profesor invitado
+      try {
+        const inviter = await prisma.user.findUnique({ where: { id: profId } });
+        const project = await prisma.project.findUnique({ where: { id: projectId as string } });
+        await rabbitmqService.publishPushNotification({
+          user_id: invitee.id,
+          title: 'Invitación a proyecto',
+          body: `${inviter?.full_name || 'Un profesor'} te invitó a colaborar en el proyecto "${project?.name || ''}".`,
+          type: 'project_invite',
+          deepLink: '/projects'
+        });
+      } catch (notifErr) {
+        logger.error('Error notificando invitación de colaborador', { notifErr });
+      }
+
       res.status(201).json({ message: 'Invitación enviada exitosamente.', collaborator: newCollaborator });
     } catch (error) {
       logger.error('Error adding collaborator', { error });
@@ -448,6 +488,26 @@ export class ProjectController {
           theme_pattern: parsedData.theme_pattern
         }
       });
+
+      // -# Notificar a todos los alumnos del proyecto que fue actualizado
+      try {
+        const students = await prisma.projectStudent.findMany({
+          where: { projectId: projectId as string },
+          select: { userId: true }
+        });
+        const updater = await prisma.user.findUnique({ where: { id: profId } });
+        for (const s of students) {
+          await rabbitmqService.publishPushNotification({
+            user_id: s.userId,
+            title: 'Proyecto actualizado',
+            body: `${updater?.full_name || 'Tu profesor'} actualizó el proyecto "${updatedProject.name}".`,
+            type: 'project_updated',
+            deepLink: `/project/${projectId}`
+          });
+        }
+      } catch (notifErr) {
+        logger.error('Error notificando actualizacion de proyecto', { notifErr });
+      }
 
       res.status(200).json({ message: 'Proyecto actualizado.', project: updatedProject });
     } catch (error) {
@@ -534,6 +594,23 @@ export class ProjectController {
         where: { projectId_userId: { projectId: projectId as string, userId: profId } },
         data: { isAccepted: true }
       });
+
+      // -# Notificar al creador del proyecto que alguien acepto
+      try {
+        const project = await prisma.project.findUnique({ where: { id: projectId as string } });
+        const accepter = await prisma.user.findUnique({ where: { id: profId } });
+        if (project && project.creator_id !== profId) {
+          await rabbitmqService.publishPushNotification({
+            user_id: project.creator_id,
+            title: 'Invitación aceptada',
+            body: `${accepter?.full_name || 'Un profesor'} aceptó unirse al proyecto "${project.name}".`,
+            type: 'project_event',
+            deepLink: `/project/${projectId}`
+          });
+        }
+      } catch (notifErr) {
+        logger.error('Error notificando aceptacion de invitacion', { notifErr });
+      }
 
       res.status(200).json({ message: 'Invitación aceptada.' });
     } catch (error) {

@@ -364,23 +364,48 @@ export class FinalReviewController {
         logger.error('Failed to log ActivityLog for review', { err });
       }
 
-      // (El almacenamiento de Qdrant ahora ocurre al enviar la propuesta, no aquí)
-
-      // Emit notification to the student (leader)
+      // -# Notificar a TODO el equipo (no solo al lider)
       try {
-        let notifMessage = `Tu propuesta ha cambiado a estado: ${parsedData.status}`;
-        if (parsedData.status === 'SUMMONED') {
-           notifMessage = `Tu equipo ha sido citado a revisión el ${parsedData.appointment_date}`;
+        const teamMembers = await prisma.teamMember.findMany({
+          where: { teamId: review.team_id },
+          select: { userId: true }
+        });
+        const team = await prisma.team.findUnique({ where: { id: review.team_id } });
+        const prof = await prisma.user.findUnique({ where: { id: profId } });
+        const project = await prisma.project.findUnique({ where: { id: review.team.projectId } });
+
+        let notifTitle = 'Actualización de tu propuesta';
+        let notifMessage = '';
+
+        if (parsedData.status === 'APPROVED') {
+          notifTitle = '✅ Propuesta Aprobada';
+          notifMessage = `El Prof. ${prof?.full_name || 'Tu profesor'} aprobó la propuesta del equipo "${team?.name || ''}" en el proyecto "${project?.name || ''}".`;
+        } else if (parsedData.status === 'REJECTED') {
+          notifTitle = '❌ Propuesta Rechazada';
+          notifMessage = `El Prof. ${prof?.full_name || 'Tu profesor'} rechazó la propuesta del equipo "${team?.name || ''}" en el proyecto "${project?.name || ''}". Revisa los comentarios.`;
+        } else if (parsedData.status === 'SUMMONED') {
+          notifTitle = '📅 Equipo citado a revisión';
+          notifMessage = `El equipo "${team?.name || ''}" ha sido citado para revisión el ${parsedData.appointment_date || 'próximamente'}.`;
         }
-        await rabbitmqService.publishPushNotification({
-          userId: review.student_id,
-          title: 'Actualización de Revisión Final',
-          body: notifMessage,
-          type: 'SYSTEM',
-          data: JSON.stringify({ reviewId: updatedReview.id, status: parsedData.status })
-        } as any);
+
+        const deepLink = `/project/${review.team.projectId}?tab=2`;
+
+        const memberIds = new Set(teamMembers.map(m => m.userId));
+        memberIds.add(review.student_id); // asegurar que el lider siempre recibe
+
+        for (const memberId of memberIds) {
+          await rabbitmqService.publishPushNotification({
+            user_id: memberId,
+            title: notifTitle,
+            body: notifMessage,
+            type: 'review_updated',
+            deepLink,
+            authorName: prof?.full_name || 'Profesor',
+            authorPhotoUrl: prof?.profile_picture || null
+          });
+        }
       } catch (qError) {
-        logger.error('Failed to emit notification', { qError });
+        logger.error('Failed to emit notifications to team', { qError });
       }
 
       res.status(200).json({ message: 'Review status updated', review: updatedReview });
