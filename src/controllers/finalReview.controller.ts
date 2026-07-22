@@ -257,7 +257,7 @@ export class FinalReviewController {
         let proStudentIds = new Set<string>();
         if (emails.length > 0) {
           try {
-            const resp = await axios.post('http://payments-back-corvus:3005/pagos/suscripciones/batch-verificar', {
+            const resp = await axios.post('http://payments-service:8001/pagos/suscripciones/batch-verificar', {
               emails
             });
             const proStatusMap = resp.data; // { 'email1': true, 'email2': false }
