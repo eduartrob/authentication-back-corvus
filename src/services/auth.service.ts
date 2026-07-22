@@ -64,7 +64,7 @@ export class AuthService {
       }
 
       const token = jwt.sign(
-        { id: user.id, role: user.role.name },
+        { id: user.id, role: user.role.name, email: user.email },
         process.env.JWT_SECRET || 'secret',
         { expiresIn: (process.env.JWT_EXPIRES_IN || '1d') as any }
       );
@@ -148,7 +148,7 @@ export class AuthService {
 
       // -# generar jwt de nuestra aplicacion
       const token = jwt.sign(
-        { id: user.id, role: user.role.name },
+        { id: user.id, role: user.role.name, email: user.email },
         process.env.JWT_SECRET || 'secret',
         { expiresIn: (process.env.JWT_EXPIRES_IN || '1d') as any }
       );
