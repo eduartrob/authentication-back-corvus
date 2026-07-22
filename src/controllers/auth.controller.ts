@@ -60,37 +60,17 @@ export class AuthController {
       if (validatedData.fcmToken && data.user) {
         rabbitmqService.publishDeviceRegistered(data.user.id, validatedData.fcmToken);
 
-        // -# Detectar si es un dispositivo nuevo y notificar a los otros
-        try {
-          const existingDevices = await prisma.userDevice.findMany({
-            where: { userId: data.user.id }
-          });
-          const isNewDevice = !existingDevices.some(d => d.fcmToken === validatedData.fcmToken);
-
-          if (isNewDevice && existingDevices.length > 0) {
-            // Notificar a los dispositivos ya registrados sobre el nuevo acceso
-            for (const device of existingDevices) {
-              await rabbitmqService.publishPushNotification({
-                user_id: data.user.id,
-                title: '⚠️ Nuevo inicio de sesión detectado',
-                body: `Tu cuenta fue accedida desde un nuevo dispositivo. ¿Eres tú? Toca para verificar.`,
-                type: 'security_new_device',
-                deepLink: '/security-alert'
-              });
-            }
-          } else {
-            // Mismo dispositivo — notificacion informativa
-            await rabbitmqService.publishPushNotification({
-              user_id: data.user.id,
-              title: 'Inicio de sesión exitoso',
-              body: `Bienvenido de vuelta, ${data.user.name || 'usuario'}. Accediste a tu cuenta.`,
-              type: 'security_login',
-              deepLink: '/profile'
-            });
-          }
-        } catch (secErr) {
-          logger.error('Error enviando notificacion de seguridad en login', { secErr });
-        }
+        // -# Publicar evento de login para que notifications-service detecte nuevo dispositivo
+        // El notifications-service tiene acceso a UserDevice y puede comparar el fcmToken
+        rabbitmqService.publishPushNotification({
+          user_id: data.user.id,
+          title: 'Inicio de sesión exitoso',
+          body: `Bienvenido de vuelta, ${(data.user as any).full_name || (data.user as any).username || 'usuario'}.`,
+          type: 'security_login',
+          deepLink: '/profile',
+          // Incluir fcmToken para que notifications-service detecte si es dispositivo nuevo
+          incomingFcmToken: validatedData.fcmToken
+        });
       }
       
       if (data.user) {
