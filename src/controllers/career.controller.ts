@@ -49,7 +49,7 @@ export const resolveCareer = async (req: Request, res: Response, next: NextFunct
 
     const normalizedName = careerName.toLowerCase().trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 
-    // Intentar buscar la carrera de forma exacta o semántica (usando similaridad básica por ahora)
+    // 1. Exact normalized_name match
     let career = await prisma.career.findFirst({
       where: {
         normalized_name: {
@@ -65,12 +65,31 @@ export const resolveCareer = async (req: Request, res: Response, next: NextFunct
       }
     });
 
+    // 2. If not found, try case-insensitive exact match on name itself
     if (!career) {
-      // Buscar con similitud usando contains
+      career = await prisma.career.findFirst({
+        where: {
+          name: {
+            equals: careerName,
+            mode: 'insensitive'
+          }
+        },
+        include: {
+          career_skills: {
+            include: {
+              skill: true
+            }
+          }
+        }
+      });
+    }
+
+    // 3. Fallback: starts-with (prefix) match — avoids false substring matches
+    if (!career) {
       career = await prisma.career.findFirst({
         where: {
           normalized_name: {
-            contains: normalizedName
+            startsWith: normalizedName
           }
         },
         include: {
@@ -84,14 +103,14 @@ export const resolveCareer = async (req: Request, res: Response, next: NextFunct
     }
 
     if (career && career.career_skills && career.career_skills.length > 0) {
-      // Si la encontró y tiene habilidades, retornamos la carrera y sus habilidades formateadas solo como strings
+      // Si la encontró y tiene habilidades, retornamos la carrera y sus habilidades
       const skills = career.career_skills.map((cs: any) => cs.skill.name);
       res.status(200).json({ career, skills });
       return;
     }
 
-    // Si NO se encontró, pedimos las habilidades al microservicio llm-back-corvus
-    console.log(`🧠 Carrera "${careerName}" no encontrada. Llamando a llm-back-corvus...`);
+    // Si NO se encontró o no tiene habilidades, pedimos al LLM
+    console.log(`🧠 Carrera "${careerName}" no encontrada con habilidades. Llamando a llm-back-corvus...`);
     
     let generatedSkills: {name: string, weight: number}[] = [];
 
