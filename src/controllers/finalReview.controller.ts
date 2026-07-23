@@ -289,12 +289,23 @@ export class FinalReviewController {
         return;
       }
 
+      // If SUMMONED, preserve previous status in proposal_data
+      let proposalDataUpdate: Record<string, any> | undefined;
+      if (parsedData.status === 'SUMMONED') {
+        const existingProposalData = typeof review.proposal_data === 'object' && review.proposal_data !== null
+          ? { ...review.proposal_data as Record<string, any> }
+          : {};
+        existingProposalData['previous_status'] = review.status;
+        proposalDataUpdate = existingProposalData;
+      }
+
       const updatedReview = await prisma.finalReview.update({
         where: { id: reviewId },
         data: {
           status: parsedData.status,
           appointment_date: parsedData.appointment_date ? new Date(parsedData.appointment_date) : null,
-          location_link: parsedData.location_link as string | undefined
+          location_link: parsedData.location_link as string | undefined,
+          ...(proposalDataUpdate ? { proposal_data: proposalDataUpdate } : {})
         }
       });
 
@@ -411,7 +422,7 @@ export class FinalReviewController {
       let newOverallStatus = review.status;
       if (rejectedCount > 0) {
         newOverallStatus = 'REJECTED';
-      } else if (approvedCount >= allProjectProfs) {
+      } else if (approvedCount > 0) {
         newOverallStatus = 'APPROVED';
       }
 
