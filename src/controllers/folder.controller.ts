@@ -35,13 +35,26 @@ export const getFolders = async (req: Request, res: Response) => {
             return res.status(401).json({ error: 'No autorizado' });
         }
 
-        const folders = await FolderService.getFoldersByUser(userId);
+        // Get the professor's folders from the clustering service
+        // The clustering service matches folders by professor_id
+        const clusteringUrl = process.env.CLUSTERING_INTEGRATOR_URL || 'http://clustering-integrator-service:3002';
+        let folders: any[] = [];
+        try {
+            const response = await fetch(`${clusteringUrl}/api/v1/admin/drive/professor-folders?professor_id=${userId}`);
+            if (response.ok) {
+                folders = await response.json();
+            }
+        } catch (fetchError) {
+            console.error('[FolderController] Error calling clustering service:', fetchError);
+        }
+
         return res.status(200).json(folders);
     } catch (error) {
         console.error('[FolderController] Error getFolders:', error);
         return res.status(500).json({ error: 'Error interno del servidor' });
     }
 };
+
 
 export const checkFolder = async (req: Request, res: Response) => {
     try {

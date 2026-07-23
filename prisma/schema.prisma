@@ -40,7 +40,7 @@ model User {
   careerId String? @db.Uuid
   career   Career? @relation(fields: [careerId], references: [id])
 
-  semester String? @db.VarChar(255)
+  semester   String? @db.VarChar(255)
   cluster_id Int?
 
   user_skills UserSkill[]
@@ -53,7 +53,6 @@ model User {
   activity_logs  ActivityLog[]
 
   // Campos de clustering
-  team_id                 String?   @db.Uuid
   bio                     String?   @default("")
   tags                    String[]  @default([])
   is_verified             Boolean   @default(false)
@@ -61,6 +60,12 @@ model User {
   verification_expires_at DateTime?
   google_email            String?
   secondary_is_verified   Boolean   @default(false)
+  is_active               Boolean   @default(true)
+
+  team_members           TeamMember[]
+  projects_created       Project[]
+  project_collaborations ProjectProfessor[]
+  project_students       ProjectStudent[]
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -69,10 +74,10 @@ model User {
 }
 
 model University {
-  id               String   @id @default(uuid()) @db.Uuid
-  name             String   @unique
+  id               String  @id @default(uuid()) @db.Uuid
+  name             String  @unique
   acronym          String?
-  registrationCode String?  @unique
+  registrationCode String? @unique
 
   users              User[]
   university_careers UniversityCareer[]
@@ -88,6 +93,7 @@ model Career {
   users              User[]
   career_skills      CareerSkill[]
   university_careers UniversityCareer[]
+  projects           Project[]
 
   createdAt DateTime @default(now()) @map("created_at")
 
@@ -189,18 +195,103 @@ model ActivityLog {
 }
 
 model FinalReview {
-  id               String   @id @default(uuid()) @db.Uuid
-  team_id          String   @db.Uuid
-  career_id        String   @db.Uuid
-  university_id    String   @db.Uuid
-  student_id       String   @db.Uuid
-  proposal_data    Json     // Link PDF + AI Analysis
-  status           String   @default("PENDING") // PENDING, APPROVED, REJECTED, SUMMONED
-  appointment_date DateTime?
-  location_link    String?
+  id                 String    @id @default(uuid()) @db.Uuid
+  team_id            String    @db.Uuid
+  career_id          String    @db.Uuid
+  university_id      String    @db.Uuid
+  student_id         String    @db.Uuid
+  proposal_data      Json // Link PDF + AI Analysis
+  status             String    @default("PENDING") // PENDING, APPROVED, REJECTED, SUMMONED
+  appointment_date   DateTime?
+  location_link      String?
+  professor_comments Json      @default("[]") // [{ professorId, comment, status }]
 
-  createdAt        DateTime @default(now()) @map("created_at")
-  updatedAt        DateTime @updatedAt @map("updated_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  team Team? @relation(fields: [team_id], references: [id])
 
   @@map("final_reviews")
+}
+
+model Project {
+  id          String  @id @default(uuid()) @db.Uuid
+  name        String
+  description String? @db.Text
+  code        String  @unique // Ej: X7A-9BK
+  team_size   Int     @default(4)
+  semester    String?
+
+  career_id String? @db.Uuid
+  career    Career? @relation(fields: [career_id], references: [id])
+
+  creator_id String @db.Uuid
+  creator    User   @relation(fields: [creator_id], references: [id])
+
+  theme_color   String? @db.VarChar(7) // e.g. #FFFFFF
+  theme_pattern String? @db.VarChar(50) // e.g. pattern_dots
+
+  professors ProjectProfessor[]
+  students   ProjectStudent[]
+  teams      Team[]
+
+  is_archived Boolean @default(false)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("projects")
+}
+
+model ProjectProfessor {
+  projectId String @db.Uuid
+  userId    String @db.Uuid
+  isAccepted Boolean @default(false)
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([projectId, userId])
+  @@map("project_professors")
+}
+
+model ProjectStudent {
+  projectId String @db.Uuid
+  userId    String @db.Uuid
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@id([projectId, userId])
+  @@map("project_students")
+}
+
+model Team {
+  id   String  @id @default(uuid()) @db.Uuid
+  name String?
+
+  projectId String  @db.Uuid
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  members TeamMember[]
+  reviews FinalReview[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("teams")
+}
+
+model TeamMember {
+  teamId    String  @db.Uuid
+  userId    String  @db.Uuid
+  is_leader Boolean @default(false)
+
+  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([teamId, userId])
+  @@map("team_members")
 }

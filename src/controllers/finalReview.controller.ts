@@ -4,6 +4,7 @@ import { z } from 'zod';
 import logger from '../utils/logger';
 import prisma from '../utils/prisma';
 import { rabbitmqService } from '../services/rabbitmq.service';
+import axios from 'axios';
 
 const createReviewSchema = z.object({
   team_id: z.string().uuid(),
@@ -12,9 +13,14 @@ const createReviewSchema = z.object({
 
 const updateReviewStatusSchema = z.object({
   status: z.enum(['APPROVED', 'REJECTED', 'SUMMONED']),
-  appointment_date: z.string().datetime().optional(),
+  appointment_date: z.string().optional(),
   location_link: z.string().optional(),
   reason: z.string().optional()
+});
+
+const evaluateIndividualSchema = z.object({
+  is_approved: z.boolean(),
+  comment: z.string().optional()
 });
 
 export class FinalReviewController {
@@ -49,6 +55,15 @@ export class FinalReviewController {
         return;
       }
 
+      // Fetch the team to get project context
+      const team = await prisma.team.findUnique({
+        where: { id: parsedData.team_id }
+      });
+      if (!team) {
+        res.status(404).json({ message: 'Team not found' });
+        return;
+      }
+
       // Build the enriched proposal_data
       const proposalDataWithMeta = {
         ...(typeof parsedData.proposal_data === 'object' ? parsedData.proposal_data : {}),
@@ -65,6 +80,27 @@ export class FinalReviewController {
           proposal_data: proposalDataWithMeta,
         }
       });
+
+      // Notify Clustering Service to store vectors immediately in Qdrant for plagiarism protection
+      try {
+        const form = new URLSearchParams();
+        form.append('target_id', parsedData.team_id);
+        form.append('university_id', student.universityId || 'General');
+        form.append('career_id', student.careerId || 'General');
+        form.append('professor_id', 'General');
+        form.append('status', 'SUBMITTED');
+
+        await axios.post(
+          'http://clustering-integrator-service:3002/api/v1/register-historical-proposal',
+          form.toString(),
+          { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
+        );
+        logger.info(`Successfully registered historical proposal for team ${parsedData.team_id} upon submission`);
+      } catch (clusterErr: any) {
+        logger.error('Failed to register historical proposal in clustering service upon submission', { 
+          error: clusterErr.response?.data || clusterErr.message 
+        });
+      }
 
       // Notify professors of the same career and semester
       try {
@@ -144,28 +180,55 @@ export class FinalReviewController {
         return;
       }
 
+      const projectId = req.query.projectId as string | undefined;
+
       const prof = await prisma.user.findUnique({
         where: { id: profId },
         include: { role: true }
       });
 
-      if (!prof || prof.role.name !== 'PROFESOR') {
+      if (!prof || !['PROFESOR', 'DOCENTE', 'ADMINISTRADOR'].includes(prof.role.name)) {
         res.status(403).json({ message: 'Only professors can view final reviews' });
         return;
       }
 
-      // Find final reviews matching the professor's career
+      if (projectId) {
+        // Validate professor has access to this project
+        const projectAccess = await prisma.project.findFirst({
+          where: {
+            id: projectId,
+            OR: [
+              { creator_id: profId },
+              { professors: { some: { userId: profId } } }
+            ]
+          }
+        });
+        if (!projectAccess) {
+          res.status(403).json({ message: 'No tienes acceso a este proyecto' });
+          return;
+        }
+      }
+
+      // Find final reviews matching the project or the professor's career
+      const whereCondition: any = {};
+      
+      if (projectId) {
+         whereCondition.team = { projectId };
+      } else {
+         whereCondition.career_id = prof.careerId || undefined;
+         whereCondition.university_id = prof.universityId || undefined;
+      }
+
       const reviews = await prisma.finalReview.findMany({
-        where: { 
-           career_id: prof.careerId || undefined,
-           university_id: prof.universityId || undefined
-        },
-        orderBy: { createdAt: 'desc' }
+        where: whereCondition,
+        orderBy: { createdAt: 'desc' },
+        include: { team: true }
       });
 
       let finalReviews = reviews;
 
-      if (prof.semester) {
+      if (!projectId && prof.semester) {
+        // Only apply semester filtering if we are doing the global career fetch
         const studentIds = [...new Set(reviews.map(r => r.student_id))];
         const students = await prisma.user.findMany({
           where: { id: { in: studentIds } },
@@ -178,6 +241,53 @@ export class FinalReviewController {
           const sSemester = studentSemesterMap.get(r.student_id);
           return sSemester === prof.semester;
         });
+      }
+
+      // Fetch PRO statuses and sort
+      try {
+        const finalStudentIds = [...new Set(finalReviews.map(r => r.student_id))];
+        const finalStudents = await prisma.user.findMany({
+          where: { id: { in: finalStudentIds } },
+          select: { id: true, email: true }
+        });
+        
+        const emailToStudentId = new Map(finalStudents.map(s => [s.email, s.id]));
+        const emails = finalStudents.map(s => s.email);
+
+        let proStudentIds = new Set<string>();
+        if (emails.length > 0) {
+          try {
+            const resp = await axios.post('http://payments-service:8001/pagos/suscripciones/batch-verificar', {
+              emails
+            });
+            const proStatusMap = resp.data; // { 'email1': true, 'email2': false }
+            for (const [email, isPro] of Object.entries(proStatusMap)) {
+              if (isPro) {
+                const sid = emailToStudentId.get(email);
+                if (sid) proStudentIds.add(sid);
+              }
+            }
+          } catch (paymentErr) {
+            logger.error('Failed to fetch PRO statuses from payments service', { error: paymentErr });
+          }
+        }
+
+        // Attach isPro and sort
+        const enrichedReviews = finalReviews.map(r => ({
+          ...r,
+          isPro: proStudentIds.has(r.student_id)
+        }));
+
+        enrichedReviews.sort((a, b) => {
+          if (a.isPro && !b.isPro) return -1;
+          if (!a.isPro && b.isPro) return 1;
+          return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(); // oldest first
+        });
+        
+        res.status(200).json({ reviews: enrichedReviews });
+        return;
+      } catch (err) {
+        logger.error('Error in PRO sorting', { error: err });
       }
 
       res.status(200).json({ reviews: finalReviews });
@@ -200,11 +310,29 @@ export class FinalReviewController {
       const parsedData = updateReviewStatusSchema.parse(req.body);
 
       const review = await prisma.finalReview.findUnique({
-        where: { id: reviewId }
+        where: { id: reviewId },
+        include: { team: true }
       });
 
-      if (!review) {
+      if (!review || !review.team) {
         res.status(404).json({ message: 'Review not found' });
+        return;
+      }
+
+      const projectId = review.team.projectId;
+      
+      const projectAccess = await prisma.project.findFirst({
+        where: {
+          id: projectId,
+          OR: [
+            { creator_id: profId },
+            { professors: { some: { userId: profId } } }
+          ]
+        }
+      });
+
+      if (!projectAccess) {
+        res.status(403).json({ message: 'You are not a collaborator on this project' });
         return;
       }
 
@@ -236,26 +364,140 @@ export class FinalReviewController {
         logger.error('Failed to log ActivityLog for review', { err });
       }
 
-      // Emit notification to the student (leader)
+      // -# Notificar a TODO el equipo (no solo al lider)
       try {
-        let notifMessage = `Tu propuesta ha cambiado a estado: ${parsedData.status}`;
-        if (parsedData.status === 'SUMMONED') {
-           notifMessage = `Tu equipo ha sido citado a revisión el ${parsedData.appointment_date}`;
+        const teamMembers = await prisma.teamMember.findMany({
+          where: { teamId: review.team_id },
+          select: { userId: true }
+        });
+        const team = await prisma.team.findUnique({ where: { id: review.team_id } });
+        const prof = await prisma.user.findUnique({ where: { id: profId } });
+        const project = await prisma.project.findUnique({ where: { id: review.team.projectId } });
+
+        let notifTitle = 'Actualización de tu propuesta';
+        let notifMessage = '';
+
+        if (parsedData.status === 'APPROVED') {
+          notifTitle = '✅ Propuesta Aprobada';
+          notifMessage = `El Prof. ${prof?.full_name || 'Tu profesor'} aprobó la propuesta del equipo "${team?.name || ''}" en el proyecto "${project?.name || ''}".`;
+        } else if (parsedData.status === 'REJECTED') {
+          notifTitle = '❌ Propuesta Rechazada';
+          notifMessage = `El Prof. ${prof?.full_name || 'Tu profesor'} rechazó la propuesta del equipo "${team?.name || ''}" en el proyecto "${project?.name || ''}". Revisa los comentarios.`;
+        } else if (parsedData.status === 'SUMMONED') {
+          notifTitle = '📅 Equipo citado a revisión';
+          notifMessage = `El equipo "${team?.name || ''}" ha sido citado para revisión el ${parsedData.appointment_date || 'próximamente'}.`;
         }
-        await rabbitmqService.publishPushNotification({
-          userId: review.student_id,
-          title: 'Actualización de Revisión Final',
-          body: notifMessage,
-          type: 'SYSTEM',
-          data: JSON.stringify({ reviewId: updatedReview.id, status: parsedData.status })
-        } as any);
+
+        const deepLink = `/project/${review.team.projectId}?tab=2`;
+
+        const memberIds = new Set(teamMembers.map(m => m.userId));
+        memberIds.add(review.student_id); // asegurar que el lider siempre recibe
+
+        for (const memberId of memberIds) {
+          await rabbitmqService.publishPushNotification({
+            user_id: memberId,
+            title: notifTitle,
+            body: notifMessage,
+            type: 'review_updated',
+            deepLink,
+            authorName: prof?.full_name || 'Profesor',
+            authorPhotoUrl: prof?.profile_picture || null
+          });
+        }
       } catch (qError) {
-        logger.error('Failed to emit notification', { qError });
+        logger.error('Failed to emit notifications to team', { qError });
       }
 
       res.status(200).json({ message: 'Review status updated', review: updatedReview });
     } catch (error) {
       logger.error('Error updating review status', { error });
+      if (error instanceof z.ZodError) {
+         res.status(400).json({ message: 'Invalid data', errors: (error as any).errors });
+         return;
+      }
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  }
+
+  public async addProfessorEvaluation(req: AuthRequest, res: Response): Promise<void> {
+    try {
+      const profId = req.user?.id;
+      const reviewId = req.params.id as string;
+
+      if (!profId) {
+        res.status(401).json({ message: 'Unauthorized' });
+        return;
+      }
+
+      const parsedData = evaluateIndividualSchema.parse(req.body);
+      const evalStatus = parsedData.is_approved ? 'APPROVED' : 'REJECTED';
+
+      const review = await prisma.finalReview.findUnique({
+        where: { id: reviewId },
+        include: { team: true }
+      });
+
+      if (!review || !review.team) {
+        res.status(404).json({ message: 'Review not found' });
+        return;
+      }
+
+      const projectId = review.team.projectId;
+      
+      // Verify if the professor belongs to the project
+      const projectAccess = await prisma.project.findFirst({
+        where: {
+          id: projectId,
+          OR: [
+            { creator_id: profId },
+            { professors: { some: { userId: profId } } }
+          ]
+        }
+      });
+
+      if (!projectAccess) {
+        res.status(403).json({ message: 'You are not a collaborator on this project' });
+        return;
+      }
+
+      const currentComments: any[] = Array.isArray(review.professor_comments) 
+                                      ? review.professor_comments 
+                                      : [];
+
+      // Update or add the professor's evaluation
+      const existingIdx = currentComments.findIndex(c => c.professorId === profId);
+      if (existingIdx >= 0) {
+        currentComments[existingIdx] = { professorId: profId, status: evalStatus, comment: parsedData.comment, timestamp: new Date().toISOString() };
+      } else {
+        currentComments.push({ professorId: profId, status: evalStatus, comment: parsedData.comment, timestamp: new Date().toISOString() });
+      }
+
+      // Logic to auto-update overall status
+      const allProjectProfs = await prisma.projectProfessor.count({
+        where: { projectId }
+      });
+
+      const approvedCount = currentComments.filter(c => c.status === 'APPROVED').length;
+      const rejectedCount = currentComments.filter(c => c.status === 'REJECTED').length;
+
+      let newOverallStatus = review.status;
+      if (rejectedCount > 0) {
+        newOverallStatus = 'REJECTED';
+      } else if (approvedCount >= allProjectProfs) {
+        newOverallStatus = 'APPROVED';
+      }
+
+      const updatedReview = await prisma.finalReview.update({
+        where: { id: reviewId },
+        data: {
+          professor_comments: currentComments,
+          status: newOverallStatus
+        }
+      });
+
+      res.status(200).json({ message: 'Evaluación individual guardada', review: updatedReview });
+    } catch (error) {
+      logger.error('Error in addProfessorEvaluation', { error });
       if (error instanceof z.ZodError) {
          res.status(400).json({ message: 'Invalid data', errors: (error as any).errors });
          return;
