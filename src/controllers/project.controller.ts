@@ -268,7 +268,7 @@ export class ProjectController {
   public async archiveProject(req: AuthRequest, res: Response): Promise<void> {
     try {
       const userId = req.user?.id;
-      const projectId = req.params.id;
+      const projectId = req.params.id as string;
 
       if (!userId) {
         res.status(401).json({ message: 'Unauthorized' });

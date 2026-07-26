@@ -239,6 +239,9 @@ model Project {
   allowed_extensions String[] @default([".pdf", ".md", ".txt"])
   blocked_topics     String[] @default([])
 
+  is_active   Boolean @default(true)
+  is_archived Boolean @default(false)
+
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
