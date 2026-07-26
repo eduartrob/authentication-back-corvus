@@ -11,6 +11,7 @@ router.use(authenticateJWT);
 router.post('/', projectController.createProject.bind(projectController));
 router.post('/join', projectController.joinProject.bind(projectController));
 router.get('/my-projects', projectController.getMyProjects.bind(projectController));
+router.get('/archived', projectController.getArchivedProjects.bind(projectController));
 router.post('/:id/collaborators', projectController.addCollaborator.bind(projectController));
 router.get('/:id/collaborators', projectController.getCollaborators.bind(projectController));
 router.put('/:id', projectController.updateProject.bind(projectController));
@@ -20,5 +21,8 @@ router.delete('/:id/collaborators/reject', projectController.rejectInvitation.bi
 router.delete('/:id/collaborators', projectController.removeCollaborator.bind(projectController));
 
 router.delete('/:id', projectController.archiveProject.bind(projectController));
+
+router.post('/archive', projectController.archiveProjects.bind(projectController));
+router.post('/unarchive', projectController.unarchiveProjects.bind(projectController));
 
 export default router;
