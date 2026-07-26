@@ -112,4 +112,83 @@ router.patch('/projects/:projectId/team-size', async (req, res) => {
   }
 });
 
+router.get('/projects/:projectId/rules', async (req, res) => {
+  const { projectId } = req.params;
+  try {
+    const project = await (prisma as any).project.findUnique({
+      where: { id: projectId },
+      include: {
+        sections: true
+      }
+    });
+    if (!project) {
+      return res.status(404).json({ error: 'Proyecto no encontrado' });
+    }
+    return res.json({
+      min_team_members: project.min_team_size,
+      max_team_members: project.team_size,
+      allowed_extensions: project.allowed_extensions,
+      exclusion_rules: project.blocked_topics,
+      project_sections: project.sections.map((s: any) => ({
+        nombre: s.nombre,
+        obligatoria: s.obligatoria
+      }))
+    });
+  } catch (error) {
+    console.error('[internal/projects/rules] Error:', error);
+    return res.status(500).json({ error: 'Error consultando reglas del proyecto' });
+  }
+});
+
+router.patch('/projects/:projectId/rules', async (req, res) => {
+  const { projectId } = req.params;
+  const { min_team_members, max_team_members, allowed_extensions, exclusion_rules, project_sections } = req.body;
+  
+  try {
+    // Transacción para borrar y recrear las secciones
+    const updatedProject = await (prisma as any).$transaction(async (tx: any) => {
+      // 1. Update basic fields if provided
+      const updateData: any = {};
+      if (typeof min_team_members === 'number') updateData.min_team_size = min_team_members;
+      if (typeof max_team_members === 'number') updateData.team_size = max_team_members;
+      if (Array.isArray(allowed_extensions)) updateData.allowed_extensions = allowed_extensions;
+      if (Array.isArray(exclusion_rules)) updateData.blocked_topics = exclusion_rules;
+      
+      let project = await tx.project.findUnique({ where: { id: projectId } });
+      if (!project) throw new Error('Project not found');
+
+      if (Object.keys(updateData).length > 0) {
+        project = await tx.project.update({
+          where: { id: projectId },
+          data: updateData
+        });
+      }
+
+      // 2. Handle sections if provided
+      if (Array.isArray(project_sections)) {
+        await tx.projectSection.deleteMany({
+          where: { projectId: projectId }
+        });
+        
+        if (project_sections.length > 0) {
+          await tx.projectSection.createMany({
+            data: project_sections.map((s: any) => ({
+              projectId: projectId,
+              nombre: s.nombre,
+              obligatoria: s.obligatoria === true || s.obligatoria === 'true'
+            }))
+          });
+        }
+      }
+
+      return project;
+    });
+
+    return res.json({ success: true });
+  } catch (error) {
+    console.error('[internal/projects/rules] Error:', error);
+    return res.status(500).json({ error: 'Error actualizando reglas del proyecto' });
+  }
+});
+
 export default router;
