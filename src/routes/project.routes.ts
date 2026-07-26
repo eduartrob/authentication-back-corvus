@@ -19,4 +19,6 @@ router.post('/:id/collaborators/accept', projectController.acceptInvitation.bind
 router.delete('/:id/collaborators/reject', projectController.rejectInvitation.bind(projectController));
 router.delete('/:id/collaborators', projectController.removeCollaborator.bind(projectController));
 
+router.delete('/:id', projectController.archiveProject.bind(projectController));
+
 export default router;

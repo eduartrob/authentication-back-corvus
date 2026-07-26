@@ -192,7 +192,7 @@ export class ProjectController {
       if (user.role.name === 'ALUMNO') {
         // Find projects where the student has joined (ProjectStudent)
         const projectStudents = await prisma.projectStudent.findMany({
-          where: { userId },
+          where: { userId, project: { is_archived: false } },
           include: { project: true }
         });
 
@@ -214,7 +214,7 @@ export class ProjectController {
       } else {
         // Professor: Find projects they created or collaborate on
         const collaborations = await prisma.projectProfessor.findMany({
-          where: { userId },
+          where: { userId, project: { is_archived: false } },
           include: {
             project: {
               include: {
@@ -233,7 +233,7 @@ export class ProjectController {
 
         // Include projects where the user is the creator
         const createdProjects = await prisma.project.findMany({
-          where: { creator_id: userId },
+          where: { creator_id: userId, is_archived: false },
           include: {
             creator: {
               select: {
@@ -262,6 +262,42 @@ export class ProjectController {
       console.error('Error getting projects stack:', error);
       logger.error('Error getting projects', { error });
       res.status(500).json({ message: 'Internal server error' });
+    }
+  }
+
+  public async archiveProject(req: AuthRequest, res: Response): Promise<void> {
+    try {
+      const userId = req.user?.id;
+      const projectId = req.params.id;
+
+      if (!userId) {
+        res.status(401).json({ message: 'Unauthorized' });
+        return;
+      }
+
+      const project = await prisma.project.findUnique({
+        where: { id: projectId }
+      });
+
+      if (!project) {
+        res.status(404).json({ message: 'Proyecto no encontrado' });
+        return;
+      }
+
+      if (project.creator_id !== userId) {
+        res.status(403).json({ message: 'Solo el creador puede archivar el proyecto' });
+        return;
+      }
+
+      await prisma.project.update({
+        where: { id: projectId },
+        data: { is_archived: true }
+      });
+
+      res.status(200).json({ message: 'Proyecto archivado exitosamente' });
+    } catch (error) {
+      console.error('Error archiving project:', error);
+      res.status(500).json({ message: 'Error interno del servidor' });
     }
   }
 
