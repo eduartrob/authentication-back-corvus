@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken';
 import { OAuth2Client } from 'google-auth-library';
 import prisma from '../utils/prisma';
 import logger from '../utils/logger';
+import { encryptField, decryptField } from '../utils/encryption.util';
 
 const googleClient = new OAuth2Client(
   process.env.GOOGLE_CLIENT_ID,
@@ -64,7 +65,7 @@ export class AuthService {
       }
 
       const token = jwt.sign(
-        { id: user.id, role: user.role.name },
+        { id: user.id, role: user.role.name, email: user.email },
         process.env.JWT_SECRET || 'secret',
         { expiresIn: (process.env.JWT_EXPIRES_IN || '1d') as any }
       );
@@ -152,7 +153,7 @@ export class AuthService {
 
       // -# generar jwt de nuestra aplicacion
       const token = jwt.sign(
-        { id: user.id, role: user.role.name },
+        { id: user.id, role: user.role.name, email: user.email },
         process.env.JWT_SECRET || 'secret',
         { expiresIn: (process.env.JWT_EXPIRES_IN || '1d') as any }
       );
@@ -225,10 +226,10 @@ export class AuthService {
         data: {
           secondary_email: isSameEmail ? currentUser.secondary_email : email,
           secondary_is_verified: isSameEmail ? currentUser.secondary_is_verified : true,
-          full_name: currentUser.full_name || fullName,
+          full_name: currentUser.full_name || fullName || null,
           profile_picture: currentUser.profile_picture || profilePicture,
-          google_access_token: accessToken || currentUser.google_access_token,
-          google_refresh_token: refreshToken || currentUser.google_refresh_token,
+          google_access_token: accessToken ? encryptField(accessToken) : currentUser.google_access_token,
+          google_refresh_token: refreshToken ? encryptField(refreshToken) : currentUser.google_refresh_token,
           google_email: email,
           is_verified: isSameEmail ? true : currentUser.is_verified
         }

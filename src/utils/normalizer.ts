@@ -35,36 +35,6 @@ export function normalizeCareer(name: string): string {
   if (!name) return name;
   let normalized = name.toLowerCase().trim();
   
-  // Remove accents
-  normalized = normalized.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-
-  // Common variations for Software Engineering
-  if (
-    normalized.includes('sofware') ||
-    normalized.includes('software') ||
-    normalized.includes('sistemas')
-  ) {
-    if (normalized.includes('ingeneria') || normalized.includes('ingenieria') || normalized.includes('desarrollo')) {
-      return 'Ingeniería en Desarrollo de Software';
-    }
-  }
-
-  if (normalized.includes('mecatronica')) {
-    return 'Ingeniería Mecatrónica';
-  }
-
-  if (normalized.includes('biomedica')) {
-    return 'Ingeniería Biomédica';
-  }
-
-  if (normalized.includes('petrolera')) {
-    return 'Ingeniería Petrolera';
-  }
-  
-  if (normalized.includes('tecnologia') && normalized.includes('informacion')) {
-    return 'Ingeniería en Tecnologías de la Información';
-  }
-
-  // Capitalize first letters
+  // Only capitalize first letters
   return normalized.replace(/\b\w/g, (char) => char.toUpperCase());
 }

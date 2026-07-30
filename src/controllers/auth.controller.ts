@@ -11,7 +11,7 @@ import { normalizeUniversity, normalizeCareer } from '../utils/normalizer';
 
 const authService = new AuthService();
 import { rabbitmqService } from '../services/rabbitmq.service';
-
+import { AuthRequest } from '../middlewares/auth.middleware';
 const registerSchema = z.object({
   email: z.string().email(),
   password: z.string().min(6),
@@ -59,6 +59,18 @@ export class AuthController {
       
       if (validatedData.fcmToken && data.user) {
         rabbitmqService.publishDeviceRegistered(data.user.id, validatedData.fcmToken);
+
+        // -# Publicar evento de login para que notifications-service detecte nuevo dispositivo
+        // El notifications-service tiene acceso a UserDevice y puede comparar el fcmToken
+        rabbitmqService.publishPushNotification({
+          user_id: data.user.id,
+          title: 'Inicio de sesión exitoso',
+          body: `Bienvenido de vuelta, ${(data.user as any).full_name || (data.user as any).username || 'usuario'}.`,
+          type: 'security_login',
+          deepLink: '/profile',
+          // Incluir fcmToken para que notifications-service detecte si es dispositivo nuevo
+          incomingFcmToken: validatedData.fcmToken
+        });
       }
       
       if (data.user) {
@@ -151,7 +163,9 @@ export class AuthController {
                   email: fullUser.email,
                   name: fullUser.full_name,
                   photoUrl: fullUser.profile_picture,
-                  role: fullUser.role.name
+                  role: fullUser.role.name,
+                  universityId: fullUser.universityId,
+                  careerId: fullUser.careerId
               }
           });
       } catch (error: any) {
@@ -195,9 +209,9 @@ export class AuthController {
 
       rabbitmqService.publishPasswordRecovery("user-id", validatedData.email, securePin);
 
+      // ⚠️ SEGURIDAD: No devolver el PIN en la respuesta nunca en producción
       res.status(200).json({ 
         message: 'Si el correo existe, se ha enviado un PIN de recuperación.',
-        _test_pin: securePin 
       });
     } catch (error: any) {
       if (error instanceof z.ZodError) {
@@ -283,11 +297,9 @@ export class AuthController {
         const missingSkills = skills.filter((s: string) => !foundSkillNames.includes(s));
         
         for (const skillName of missingSkills) {
-          const normalize = (str: string) => str.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
           const newSkill = await prisma.skill.create({
             data: { 
-              name: skillName, 
-              normalized_name: normalize(skillName) 
+              name: skillName
             }
           });
           skillRecords.push(newSkill);
@@ -324,12 +336,12 @@ export class AuthController {
         return;
       }
 
-      // Configure Cloudinary using user's credentials
+      // Configure Cloudinary using environment variables
       const cloudinary = require('cloudinary').v2;
       cloudinary.config({
-        cloud_name: 'zpqp1swt',
-        api_key: '594268643178644',
-        api_secret: 'q-zoYZBI_Oblx72m7YlTM16KLTQ',
+        cloud_name: process.env.CLOUDINARY_CLOUD_NAME || 'zpqp1swt',
+        api_key: process.env.CLOUDINARY_API_KEY || '594268643178644',
+        api_secret: process.env.CLOUDINARY_API_SECRET || 'q-zoYZBI_Oblx72m7YlTM16KLTQ',
       });
 
       // Upload image to Cloudinary (base64 string can be passed directly if it includes data:image/... base64,)
@@ -369,9 +381,9 @@ export class AuthController {
 
       const cloudinary = require('cloudinary').v2;
       cloudinary.config({
-        cloud_name: 'zpqp1swt',
-        api_key: '594268643178644',
-        api_secret: 'q-zoYZBI_Oblx72m7YlTM16KLTQ',
+        cloud_name: process.env.CLOUDINARY_CLOUD_NAME || 'zpqp1swt',
+        api_key: process.env.CLOUDINARY_API_KEY || '594268643178644',
+        api_secret: process.env.CLOUDINARY_API_SECRET || 'q-zoYZBI_Oblx72m7YlTM16KLTQ',
       });
 
       try {
@@ -505,18 +517,22 @@ export class AuthController {
         return;
       }
 
-      // Generate a 6-digit random code
-      const pin = Math.floor(100000 + Math.random() * 900000).toString();
+      // Generate a 6-digit cryptographically secure code
+      const pin = crypto.randomInt(100000, 999999).toString();
       
       // Set expiration to 15 minutes from now
       const expiresAt = new Date();
       expiresAt.setMinutes(expiresAt.getMinutes() + 15);
 
+      // Hash the PIN before storing — raw PIN is only sent via email, never stored in plaintext
+      const pinHash = await bcrypt.hash(pin, 10);
+
       await prisma.user.update({
         where: { id: user.id },
         data: {
-          verification_code: pin,
+          verification_code: pinHash,
           verification_expires_at: expiresAt,
+          verification_attempts: 0,
         },
       });
 
@@ -547,13 +563,33 @@ export class AuthController {
         where: { id: user.id },
       });
 
-      if (!dbUser || dbUser.verification_code !== code) {
-        res.status(400).json({ error: 'Código incorrecto' });
+      if (!dbUser || !dbUser.verification_code) {
+        res.status(400).json({ error: 'Código no válido o no solicitado' });
+        return;
+      }
+
+      // Brute-force protection: max 5 attempts
+      const MAX_ATTEMPTS = 5;
+      const attempts = dbUser.verification_attempts ?? 0;
+      if (attempts >= MAX_ATTEMPTS) {
+        res.status(429).json({ error: 'Demasiados intentos. Solicita un nuevo código.' });
         return;
       }
 
       if (dbUser.verification_expires_at && new Date() > dbUser.verification_expires_at) {
         res.status(400).json({ error: 'El código ha expirado' });
+        return;
+      }
+
+      // Compare submitted code against the stored hash (timing-safe)
+      const isMatch = await bcrypt.compare(code, dbUser.verification_code);
+      if (!isMatch) {
+        // Increment attempt counter
+        await prisma.user.update({
+          where: { id: user.id },
+          data: { verification_attempts: attempts + 1 },
+        });
+        res.status(400).json({ error: 'Código incorrecto' });
         return;
       }
 
@@ -663,39 +699,133 @@ export class AuthController {
 
   async deleteAccount(req: Request, res: Response) {
     try {
-      const user = (req as any).user;
-      if (!user) {
+      const userReq = (req as any).user;
+      if (!userReq) {
         res.status(401).json({ error: 'No autorizado' });
         return;
       }
 
-      // La eliminación en cascada de Prisma se encargará de borrar:
-      // - user_skills
-      // - linked_folders
-      // - llm_sessions
-      // - requests (a través de la DB si es que está configurado cascade)
-      // Y establecerá en NULL el userId en activity_logs
+      // Obtener info completa del usuario
+      const dbUser = await prisma.user.findUnique({
+        where: { id: userReq.id },
+        include: {
+          role: true,
+          team_members: true,
+          project_collaborations: true,
+        }
+      });
+
+      if (!dbUser) {
+        res.status(404).json({ error: 'Usuario no encontrado' });
+        return;
+      }
 
       // Delete photo from Cloudinary
       const cloudinary = require('cloudinary').v2;
       cloudinary.config({
-        cloud_name: 'zpqp1swt',
-        api_key: '594268643178644',
-        api_secret: 'q-zoYZBI_Oblx72m7YlTM16KLTQ',
+        cloud_name: process.env.CLOUDINARY_CLOUD_NAME || 'zpqp1swt',
+        api_key: process.env.CLOUDINARY_API_KEY || '594268643178644',
+        api_secret: process.env.CLOUDINARY_API_SECRET || 'q-zoYZBI_Oblx72m7YlTM16KLTQ',
       });
       try {
         await cloudinary.uploader.destroy(`corvus_profiles/${user.id}`);
       } catch (cloudinaryError) {
         console.error('Error deleting photo during account deletion:', cloudinaryError);
       }
-      
-      await prisma.user.delete({
-        where: { id: user.id },
+
+      const roleName = dbUser.role.name;
+
+      if (roleName === 'ALUMNO') {
+        for (const tm of dbUser.team_members) {
+          if (tm.is_leader) {
+            // Reasignar líder
+            const nextMember = await prisma.teamMember.findFirst({
+              where: { teamId: tm.teamId, userId: { not: dbUser.id } },
+              orderBy: { userId: 'asc' }
+            });
+            
+            if (nextMember) {
+              await prisma.teamMember.update({
+                where: { teamId_userId: { teamId: nextMember.teamId, userId: nextMember.userId } },
+                data: { is_leader: true }
+              });
+            } else {
+              // Si no hay más miembros, borrar revisiones y equipo
+              await prisma.finalReview.deleteMany({ where: { team_id: tm.teamId } });
+              await prisma.team.delete({ where: { id: tm.teamId } });
+            }
+          }
+        }
+        // Quitar al alumno de los equipos y proyectos
+        await prisma.teamMember.deleteMany({ where: { userId: dbUser.id } });
+        await prisma.projectStudent.deleteMany({ where: { userId: dbUser.id } });
+      } else if (roleName === 'PROFESOR' || roleName === 'ADMINISTRADOR') {
+        // Lógica de profesor: archivar proyectos si se quedan sin profesores activos
+        for (const collab of dbUser.project_collaborations) {
+          const otherActiveProfs = await prisma.projectProfessor.count({
+            where: { 
+              projectId: collab.projectId, 
+              userId: { not: dbUser.id },
+              user: { is_active: true }
+            }
+          });
+          
+          if (otherActiveProfs === 0) {
+            await prisma.project.update({
+              where: { id: collab.projectId },
+              data: { is_archived: true }
+            });
+          }
+        }
+      }
+
+      // Anonimización y Soft Delete
+      const randomHash = `deleted_${Date.now()}_${Math.random().toString(36).substring(2, 9)}@corvus.local`;
+      await prisma.user.update({
+        where: { id: dbUser.id },
+        data: {
+          is_active: false,
+          full_name: 'Usuario Eliminado',
+          email: randomHash,
+          secondary_email: null,
+          google_email: null,
+          password_hash: '',
+          enrollment_id: null,
+          profile_picture: null,
+          bio: '',
+          tags: [],
+          google_access_token: null,
+          google_refresh_token: null,
+          universityId: null,
+          careerId: null
+        }
       });
 
       res.status(200).json({ message: 'Cuenta eliminada exitosamente. Tu historial ha sido anonimizado.' });
     } catch (error: any) {
+      console.error(error);
       res.status(500).json({ error: error.message });
+    }
+  }
+
+  async getHistory(req: AuthRequest, res: Response): Promise<void> {
+    try {
+      const userId = req.user?.id;
+      if (!userId) {
+        res.status(401).json({ message: 'Unauthorized' });
+        return;
+      }
+
+      const logs = await prisma.activityLog.findMany({
+        where: { userId },
+        orderBy: { createdAt: 'desc' },
+        take: 50 // Limit to latest 50
+      });
+
+      res.status(200).json({ history: logs });
+    } catch (error) {
+      logger.error('Error fetching user history', { error });
+      res.status(500).json({ message: 'Internal server error' });
     }
   }
 }

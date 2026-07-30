@@ -17,6 +17,7 @@ router.post('/link-google', authenticateJWT, authController.linkGoogle);
 router.post('/recover-password', authController.recoverPassword);
 router.get('/me', authenticateJWT, authController.me);
 router.get('/profile/complete', authenticateJWT, authController.getCompleteProfile);
+router.get('/profile/history', authenticateJWT, authController.getHistory);
 router.put('/complete-student-profile', authenticateJWT, authController.completeStudentProfile);
 router.put('/profile', authenticateJWT, authController.updateProfile);
 router.put('/profile-picture', authenticateJWT, authController.updateProfilePicture);
