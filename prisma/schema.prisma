@@ -26,7 +26,6 @@ model User {
   id              String  @id @default(uuid()) @db.Uuid
   email           String  @unique
   secondary_email String? @unique
-  username        String? @unique // Principalmente para ADMIN
   password_hash   String
   full_name       String? // Para ALUMNO y PROFESOR
   enrollment_id   String? @unique // Matrícula
@@ -41,7 +40,6 @@ model User {
   career   Career? @relation(fields: [careerId], references: [id])
 
   semester   String? @db.VarChar(255)
-  cluster_id Int?
 
   user_skills UserSkill[]
 
@@ -49,22 +47,14 @@ model User {
   google_access_token  String? @db.Text
 
   linked_folders LinkedFolder[]
-  llm_sessions   LlmSession[]
   activity_logs  ActivityLog[]
 
-  // Campos de clustering
-  bio                     String?   @default("")
-  tags                    String[]  @default([])
   is_verified             Boolean   @default(false)
   verification_code       String?
   verification_expires_at DateTime?
+  verification_attempts   Int       @default(0)
   google_email            String?
   secondary_is_verified   Boolean   @default(false)
-
-  team_members           TeamMember[]
-  projects_created       Project[]
-  project_collaborations ProjectProfessor[]
-  project_students       ProjectStudent[]
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -92,7 +82,6 @@ model Career {
   users              User[]
   career_skills      CareerSkill[]
   university_careers UniversityCareer[]
-  projects           Project[]
 
   createdAt DateTime @default(now()) @map("created_at")
 
@@ -156,160 +145,17 @@ model LinkedFolder {
   @@map("linked_folders")
 }
 
-model LlmSession {
-  id     String @id @default(uuid()) @db.Uuid
-  userId String @db.Uuid
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  // Datos del análisis que originó la sesión
-  proposal_title String?
-  verdict        String // 'approved' | 'rejected'
-  analysis_json  Json // Snapshot completo del JSON de analyze-proposal
-
-  // Historial de mensajes de la conversación
-  messages Json @default("[]") // [{role, content, timestamp}]
-
-  // Control de cuota freemium
-  session_number Int     @default(1) // Número de sesión del usuario (1, 2, 3...)
-  is_active      Boolean @default(true)
-
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  @@map("llm_sessions")
-}
 
 model ActivityLog {
-  id     String  @id @default(uuid()) @db.Uuid
-  userId String? @db.Uuid
-  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
-
-  action    String // 'LOGIN', 'UPLOAD_DOCUMENT', 'VALIDATE_CLUSTER', 'SYSTEM_ALERT'
-  detail    String  @db.Text
-  ipAddress String? @db.VarChar(45) // Support IPv6
-
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String?  @db.Uuid
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action    String
+  detail    String   @db.Text
+  ipAddress String?  @db.VarChar(45)
   createdAt DateTime @default(now()) @map("created_at")
 
   @@map("activity_logs")
 }
 
-model FinalReview {
-  id                 String    @id @default(uuid()) @db.Uuid
-  team_id            String    @db.Uuid
-  career_id          String    @db.Uuid
-  university_id      String    @db.Uuid
-  student_id         String    @db.Uuid
-  proposal_data      Json // Link PDF + AI Analysis
-  status             String    @default("PENDING") // PENDING, APPROVED, REJECTED, SUMMONED
-  appointment_date   DateTime?
-  location_link      String?
-  professor_comments Json      @default("[]") // [{ professorId, comment, status }]
-
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  team Team? @relation(fields: [team_id], references: [id])
-
-  @@map("final_reviews")
-}
-
-model Project {
-  id          String  @id @default(uuid()) @db.Uuid
-  name        String
-  description String? @db.Text
-  code        String  @unique // Ej: X7A-9BK
-  min_team_size Int     @default(1)
-  team_size   Int     @default(4)
-  semester    String?
-
-  career_id String? @db.Uuid
-  career    Career? @relation(fields: [career_id], references: [id])
-
-  creator_id String @db.Uuid
-  creator    User   @relation(fields: [creator_id], references: [id])
-
-  theme_color   String? @db.VarChar(7) // e.g. #FFFFFF
-  theme_pattern String? @db.VarChar(50) // e.g. pattern_dots
-
-  professors ProjectProfessor[]
-  students   ProjectStudent[]
-  teams      Team[]
-  sections   ProjectSection[]
-
-  allowed_extensions String[] @default([".pdf", ".md", ".txt"])
-  blocked_topics     String[] @default([])
-
-  is_active   Boolean @default(true)
-  is_archived Boolean @default(false)
-
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  @@map("projects")
-}
-
-model ProjectProfessor {
-  projectId String @db.Uuid
-  userId    String @db.Uuid
-  isAccepted Boolean @default(false)
-  is_archived Boolean @default(false)
-
-  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@id([projectId, userId])
-  @@map("project_professors")
-}
-
-model ProjectStudent {
-  projectId String @db.Uuid
-  userId    String @db.Uuid
-  is_archived Boolean @default(false)
-
-  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  createdAt DateTime @default(now()) @map("created_at")
-
-  @@id([projectId, userId])
-  @@map("project_students")
-}
-
-model Team {
-  id   String  @id @default(uuid()) @db.Uuid
-  name String?
-
-  projectId String  @db.Uuid
-  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
-
-  members TeamMember[]
-  reviews FinalReview[]
-
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  @@map("teams")
-}
-
-model TeamMember {
-  teamId    String  @db.Uuid
-  userId    String  @db.Uuid
-  is_leader Boolean @default(false)
-
-  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@id([teamId, userId])
-  @@map("team_members")
-}
-
-model ProjectSection {
-  id          String  @id @default(uuid()) @db.Uuid
-  projectId   String  @db.Uuid
-  project     Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  nombre      String
-  obligatoria Boolean @default(false)
-  createdAt   DateTime @default(now()) @map("created_at")
-
-  @@map("project_sections")
-}

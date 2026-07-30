@@ -16,7 +16,6 @@ const registerSchema = z.object({
   email: z.string().email(),
   password: z.string().min(6),
   roleName: z.enum(['ALUMNO', 'PROFESOR', 'ADMINISTRADOR']),
-  username: z.string().optional(),
   fullName: z.string().optional(),
   profilePicture: z.string().url().optional(),
   googleEmail: z.string().email().optional(),
@@ -197,9 +196,9 @@ export class AuthController {
 
       rabbitmqService.publishPasswordRecovery("user-id", validatedData.email, securePin);
 
+      // ⚠️ SEGURIDAD: No devolver el PIN en la respuesta nunca en producción
       res.status(200).json({ 
         message: 'Si el correo existe, se ha enviado un PIN de recuperación.',
-        _test_pin: securePin 
       });
     } catch (error: any) {
       if (error instanceof z.ZodError) {
@@ -324,12 +323,12 @@ export class AuthController {
         return;
       }
 
-      // Configure Cloudinary using user's credentials
+      // Configure Cloudinary using environment variables
       const cloudinary = require('cloudinary').v2;
       cloudinary.config({
-        cloud_name: 'zpqp1swt',
-        api_key: '594268643178644',
-        api_secret: 'q-zoYZBI_Oblx72m7YlTM16KLTQ',
+        cloud_name: process.env.CLOUDINARY_CLOUD_NAME || 'zpqp1swt',
+        api_key: process.env.CLOUDINARY_API_KEY || '594268643178644',
+        api_secret: process.env.CLOUDINARY_API_SECRET || 'q-zoYZBI_Oblx72m7YlTM16KLTQ',
       });
 
       // Upload image to Cloudinary (base64 string can be passed directly if it includes data:image/... base64,)
@@ -369,9 +368,9 @@ export class AuthController {
 
       const cloudinary = require('cloudinary').v2;
       cloudinary.config({
-        cloud_name: 'zpqp1swt',
-        api_key: '594268643178644',
-        api_secret: 'q-zoYZBI_Oblx72m7YlTM16KLTQ',
+        cloud_name: process.env.CLOUDINARY_CLOUD_NAME || 'zpqp1swt',
+        api_key: process.env.CLOUDINARY_API_KEY || '594268643178644',
+        api_secret: process.env.CLOUDINARY_API_SECRET || 'q-zoYZBI_Oblx72m7YlTM16KLTQ',
       });
 
       try {
@@ -505,18 +504,22 @@ export class AuthController {
         return;
       }
 
-      // Generate a 6-digit random code
-      const pin = Math.floor(100000 + Math.random() * 900000).toString();
+      // Generate a 6-digit cryptographically secure code
+      const pin = crypto.randomInt(100000, 999999).toString();
       
       // Set expiration to 15 minutes from now
       const expiresAt = new Date();
       expiresAt.setMinutes(expiresAt.getMinutes() + 15);
 
+      // Hash the PIN before storing — raw PIN is only sent via email, never stored in plaintext
+      const pinHash = await bcrypt.hash(pin, 10);
+
       await prisma.user.update({
         where: { id: user.id },
         data: {
-          verification_code: pin,
+          verification_code: pinHash,
           verification_expires_at: expiresAt,
+          verification_attempts: 0,
         },
       });
 
@@ -547,13 +550,33 @@ export class AuthController {
         where: { id: user.id },
       });
 
-      if (!dbUser || dbUser.verification_code !== code) {
-        res.status(400).json({ error: 'Código incorrecto' });
+      if (!dbUser || !dbUser.verification_code) {
+        res.status(400).json({ error: 'Código no válido o no solicitado' });
+        return;
+      }
+
+      // Brute-force protection: max 5 attempts
+      const MAX_ATTEMPTS = 5;
+      const attempts = dbUser.verification_attempts ?? 0;
+      if (attempts >= MAX_ATTEMPTS) {
+        res.status(429).json({ error: 'Demasiados intentos. Solicita un nuevo código.' });
         return;
       }
 
       if (dbUser.verification_expires_at && new Date() > dbUser.verification_expires_at) {
         res.status(400).json({ error: 'El código ha expirado' });
+        return;
+      }
+
+      // Compare submitted code against the stored hash (timing-safe)
+      const isMatch = await bcrypt.compare(code, dbUser.verification_code);
+      if (!isMatch) {
+        // Increment attempt counter
+        await prisma.user.update({
+          where: { id: user.id },
+          data: { verification_attempts: attempts + 1 },
+        });
+        res.status(400).json({ error: 'Código incorrecto' });
         return;
       }
 
@@ -679,9 +702,9 @@ export class AuthController {
       // Delete photo from Cloudinary
       const cloudinary = require('cloudinary').v2;
       cloudinary.config({
-        cloud_name: 'zpqp1swt',
-        api_key: '594268643178644',
-        api_secret: 'q-zoYZBI_Oblx72m7YlTM16KLTQ',
+        cloud_name: process.env.CLOUDINARY_CLOUD_NAME || 'zpqp1swt',
+        api_key: process.env.CLOUDINARY_API_KEY || '594268643178644',
+        api_secret: process.env.CLOUDINARY_API_SECRET || 'q-zoYZBI_Oblx72m7YlTM16KLTQ',
       });
       try {
         await cloudinary.uploader.destroy(`corvus_profiles/${user.id}`);

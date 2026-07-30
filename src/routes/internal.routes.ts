@@ -73,6 +73,35 @@ router.post('/activity-log', async (req, res) => {
   }
 });
 
+router.get('/projects/:projectId/members', async (req, res) => {
+  const { projectId } = req.params;
+  try {
+    const project = await (prisma as any).project.findUnique({
+      where: { id: projectId },
+      include: {
+        students: { select: { userId: true } },
+        professors: { select: { userId: true } }
+      }
+    });
+
+    if (!project) {
+      return res.status(404).json({ error: 'Proyecto no encontrado' });
+    }
+
+    const students = project.students.map((s: any) => s.userId);
+    const professors = project.professors.map((p: any) => p.userId);
+    professors.push(project.creator_id);
+
+    return res.json({
+      students,
+      professors: Array.from(new Set(professors))
+    });
+  } catch (error) {
+    console.error('[internal/projects/members] Error:', error);
+    return res.status(500).json({ error: 'Error consultando miembros del proyecto' });
+  }
+});
+
 router.get('/projects/:projectId/team-size', async (req, res) => {
   const { projectId } = req.params;
   try {

@@ -495,7 +495,6 @@ export class ProjectController {
             select: {
               id: true,
               full_name: true,
-              username: true,
               email: true,
               profile_picture: true
             }
@@ -510,7 +509,6 @@ export class ProjectController {
             select: {
               id: true,
               full_name: true,
-              username: true,
               email: true,
               profile_picture: true
             }
@@ -694,10 +692,8 @@ export class ProjectController {
             select: {
               id: true,
               full_name: true,
-              username: true,
               email: true,
-              profile_picture: true,
-              bio: true
+              profile_picture: true
             }
           }
         }

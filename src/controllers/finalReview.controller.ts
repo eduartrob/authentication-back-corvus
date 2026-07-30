@@ -68,7 +68,7 @@ export class FinalReviewController {
       const proposalDataWithMeta = {
         ...(typeof parsedData.proposal_data === 'object' ? parsedData.proposal_data : {}),
         submitted_at: new Date().toISOString(),
-        submitted_by: student.full_name || student.username || studentId,
+        submitted_by: student.full_name || student.email || studentId,
       };
       
       const newReview = await prisma.finalReview.create({
@@ -119,7 +119,7 @@ export class FinalReviewController {
             await rabbitmqService.publishPushNotification({
               userId: prof.id,
               title: 'Nueva propuesta de proyecto',
-              body: `El equipo de ${student.full_name || student.username} ha enviado su propuesta final.`,
+              body: `El equipo de ${student.full_name || student.email} ha enviado su propuesta final.`,
               type: 'SYSTEM',
               data: JSON.stringify({ reviewId: newReview.id, type: 'NEW_PROPOSAL' })
             } as any);
