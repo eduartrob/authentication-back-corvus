@@ -135,14 +135,18 @@ export class AuthService {
       if (!user) {
         throw new Error('Esta cuenta de Google no está registrada. Por favor, ve a la sección de Registro para crear tu cuenta.');
       } else {
+        const updateData: any = {
+          full_name: fullName || user.full_name,
+          profile_picture: profilePicture || user.profile_picture,
+          google_access_token: accessToken || user.google_access_token
+        };
+        if (refreshToken) {
+          updateData.google_refresh_token = refreshToken;
+        }
+
         user = await prisma.user.update({
           where: { email },
-          data: {
-            full_name: user.full_name || fullName || null,
-            profile_picture: user.profile_picture || profilePicture,
-            google_access_token: accessToken ? encryptField(accessToken) : user.google_access_token,
-            google_refresh_token: refreshToken ? encryptField(refreshToken) : user.google_refresh_token
-          },
+          data: updateData,
           include: { role: true }
         });
       }

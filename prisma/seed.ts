@@ -251,10 +251,6 @@ async function main() {
   // Agregamos a UPChiapas manualmente si no tiene Ingeniería en Desarrollo de Software
   const upChiapas = await prisma.university.findUnique({ where: { name: 'UNIVERSIDAD POLITÉCNICA DE CHIAPAS' } });
   if (upChiapas) {
-      await prisma.university.update({
-        where: { id: upChiapas.id },
-        data: { registrationCode: '51B5I6' }
-      });
       const iswName = 'INGENIERÍA EN DESARROLLO DE SOFTWARE';
       const iswNormalized = normalizeString(iswName);
       let iswCareer = await prisma.career.findUnique({ where: { normalized_name: iswNormalized } });
@@ -265,16 +261,6 @@ async function main() {
       if (!existingRel) {
           await prisma.universityCareer.create({ data: { universityId: upChiapas.id, careerId: iswCareer.id } });
       }
-
-      // Assign to professors
-      const profEmails = ['thegreatteachertester@gmail.com', 'eduartrob2@gmail.com'];
-      await prisma.user.updateMany({
-        where: { email: { in: profEmails } },
-        data: {
-          universityId: upChiapas.id,
-          careerId: iswCareer.id
-        }
-      });
   }
 
   console.log(`✅ ${insertedUnis} universidades agregadas o verificadas.`);
