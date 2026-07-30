@@ -21,11 +21,10 @@ export class ProfessorController {
           OR: [
             { full_name: { contains: q, mode: 'insensitive' } },
             { email: { contains: q, mode: 'insensitive' } },
-            { username: { contains: q, mode: 'insensitive' } },
           ]
         },
         select: { 
-          id: true, full_name: true, username: true, email: true, profile_picture: true,
+          id: true, full_name: true, email: true, profile_picture: true,
           university: { select: { name: true } },
           career: { select: { name: true } }
         },

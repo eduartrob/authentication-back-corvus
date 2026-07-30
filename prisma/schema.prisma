@@ -58,6 +58,7 @@ model User {
   is_verified             Boolean   @default(false)
   verification_code       String?
   verification_expires_at DateTime?
+  verification_attempts   Int       @default(0)
   google_email            String?
   secondary_is_verified   Boolean   @default(false)
   is_active               Boolean   @default(true)
@@ -67,8 +68,9 @@ model User {
   project_collaborations ProjectProfessor[]
   project_students       ProjectStudent[]
 
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  createdAt    DateTime      @default(now()) @map("created_at")
+  updatedAt    DateTime      @updatedAt @map("updated_at")
+  teamRequests TeamRequest[]
 
   @@map("users")
 }
@@ -215,12 +217,13 @@ model FinalReview {
 }
 
 model Project {
-  id          String  @id @default(uuid()) @db.Uuid
-  name        String
-  description String? @db.Text
-  code        String  @unique // Ej: X7A-9BK
-  team_size   Int     @default(4)
-  semester    String?
+  id            String  @id @default(uuid()) @db.Uuid
+  name          String
+  description   String? @db.Text
+  code          String  @unique // Ej: X7A-9BK
+  min_team_size Int     @default(1)
+  team_size     Int     @default(4)
+  semester      String?
 
   career_id String? @db.Uuid
   career    Career? @relation(fields: [career_id], references: [id])
@@ -234,6 +237,13 @@ model Project {
   professors ProjectProfessor[]
   students   ProjectStudent[]
   teams      Team[]
+  sections   ProjectSection[]
+
+  allowed_extensions String[] @default([".pdf", ".md", ".txt"])
+  blocked_topics     String[] @default([])
+
+  is_active   Boolean @default(true)
+  is_archived Boolean @default(false)
 
   is_archived Boolean @default(false)
 
@@ -244,9 +254,10 @@ model Project {
 }
 
 model ProjectProfessor {
-  projectId String @db.Uuid
-  userId    String @db.Uuid
-  isAccepted Boolean @default(false)
+  projectId   String  @db.Uuid
+  userId      String  @db.Uuid
+  isAccepted  Boolean @default(false)
+  is_archived Boolean @default(false)
 
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
   user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -256,8 +267,9 @@ model ProjectProfessor {
 }
 
 model ProjectStudent {
-  projectId String @db.Uuid
-  userId    String @db.Uuid
+  projectId   String  @db.Uuid
+  userId      String  @db.Uuid
+  is_archived Boolean @default(false)
 
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
   user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -278,8 +290,10 @@ model Team {
   members TeamMember[]
   reviews FinalReview[]
 
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  createdAt       DateTime         @default(now()) @map("created_at")
+  updatedAt       DateTime         @updatedAt @map("updated_at")
+  teamSocialLinks TeamSocialLink[]
+  teamRequests    TeamRequest[]
 
   @@map("teams")
 }
@@ -294,4 +308,40 @@ model TeamMember {
 
   @@id([teamId, userId])
   @@map("team_members")
+}
+
+model ProjectSection {
+  id          String   @id @default(uuid()) @db.Uuid
+  projectId   String   @db.Uuid
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  nombre      String
+  obligatoria Boolean  @default(false)
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@map("project_sections")
+}
+
+model TeamSocialLink {
+  id         String   @id @default(uuid()) @db.Uuid
+  team_id    String   @db.Uuid
+  platform   String   @db.VarChar(100)
+  url        String   @db.Text
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+
+  team Team @relation(fields: [team_id], references: [id], onDelete: Cascade)
+
+  @@map("team_social_links")
+}
+
+model TeamRequest {
+  id         String   @id @default(uuid()) @db.Uuid
+  team_id    String   @db.Uuid
+  student_id String   @db.Uuid
+  state      String?  @default("PENDIENTE") @db.VarChar(50)
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+
+  team    Team @relation(fields: [team_id], references: [id], onDelete: Cascade)
+  student User @relation(fields: [student_id], references: [id], onDelete: Cascade)
+
+  @@map("team_requests")
 }

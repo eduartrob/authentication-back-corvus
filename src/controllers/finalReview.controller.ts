@@ -68,7 +68,7 @@ export class FinalReviewController {
       const proposalDataWithMeta = {
         ...(typeof parsedData.proposal_data === 'object' ? parsedData.proposal_data : {}),
         submitted_at: new Date().toISOString(),
-        submitted_by: student.full_name || student.username || studentId,
+        submitted_by: student.full_name || student.email || studentId,
       };
       
       const newReview = await prisma.finalReview.create({
@@ -119,7 +119,7 @@ export class FinalReviewController {
             await rabbitmqService.publishPushNotification({
               userId: prof.id,
               title: 'Nueva propuesta de proyecto',
-              body: `El equipo de ${student.full_name || student.username} ha enviado su propuesta final.`,
+              body: `El equipo de ${student.full_name || student.email} ha enviado su propuesta final.`,
               type: 'SYSTEM',
               data: JSON.stringify({ reviewId: newReview.id, type: 'NEW_PROPOSAL' })
             } as any);
@@ -336,12 +336,23 @@ export class FinalReviewController {
         return;
       }
 
+      // If SUMMONED, preserve previous status in proposal_data
+      let proposalDataUpdate: Record<string, any> | undefined;
+      if (parsedData.status === 'SUMMONED') {
+        const existingProposalData = typeof review.proposal_data === 'object' && review.proposal_data !== null
+          ? { ...review.proposal_data as Record<string, any> }
+          : {};
+        existingProposalData['previous_status'] = review.status;
+        proposalDataUpdate = existingProposalData;
+      }
+
       const updatedReview = await prisma.finalReview.update({
         where: { id: reviewId },
         data: {
           status: parsedData.status,
           appointment_date: parsedData.appointment_date ? new Date(parsedData.appointment_date) : null,
-          location_link: parsedData.location_link as string | undefined
+          location_link: parsedData.location_link as string | undefined,
+          ...(proposalDataUpdate ? { proposal_data: proposalDataUpdate } : {})
         }
       });
 
@@ -483,7 +494,7 @@ export class FinalReviewController {
       let newOverallStatus = review.status;
       if (rejectedCount > 0) {
         newOverallStatus = 'REJECTED';
-      } else if (approvedCount >= allProjectProfs) {
+      } else if (approvedCount > 0) {
         newOverallStatus = 'APPROVED';
       }
 

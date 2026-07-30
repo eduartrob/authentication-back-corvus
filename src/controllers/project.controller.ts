@@ -217,7 +217,7 @@ export class ProjectController {
       if (user.role.name === 'ALUMNO') {
         // Find projects where the student has joined (ProjectStudent)
         const projectStudents = await prisma.projectStudent.findMany({
-          where: { userId, project: { is_archived: false } },
+          where: { userId, is_archived: false, project: { is_archived: false } },
           include: { project: true }
         });
 
@@ -239,7 +239,7 @@ export class ProjectController {
       } else {
         // Professor: Find projects they created or collaborate on
         const collaborations = await prisma.projectProfessor.findMany({
-          where: { userId, project: { is_archived: false } },
+          where: { userId, is_archived: false, project: { is_archived: false } },
           include: {
             project: {
               include: {
@@ -264,6 +264,9 @@ export class ProjectController {
               select: {
                 full_name: true,
               }
+            },
+            professors: {
+              where: { userId }
             }
           }
         });
@@ -272,7 +275,14 @@ export class ProjectController {
         // Wait, the original code just mapped collaborations. Let's merge them properly.
         // But if creator is not in ProjectProfessor, we should include it.
         const projectsSet = new Map();
-        createdProjects.forEach(p => projectsSet.set(p.id, p));
+        createdProjects.forEach(p => {
+          const profRecord = p.professors.find(prof => prof.userId === userId);
+          if (!profRecord || !profRecord.is_archived) {
+            // Remove professors array to keep response format consistent
+            const { professors, ...projectWithoutProfessors } = p;
+            projectsSet.set(projectWithoutProfessors.id, projectWithoutProfessors);
+          }
+        });
         activeCollaborations.forEach(c => projectsSet.set(c.project.id, c.project));
 
         const projects = Array.from(projectsSet.values());
@@ -286,6 +296,195 @@ export class ProjectController {
     } catch (error) {
       console.error('Error getting projects stack:', error);
       logger.error('Error getting projects', { error });
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  }
+
+  public async getArchivedProjects(req: AuthRequest, res: Response): Promise<void> {
+    try {
+      const userId = req.user?.id;
+      if (!userId) {
+        res.status(401).json({ message: 'Unauthorized' });
+        return;
+      }
+
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        include: { role: true }
+      });
+
+      if (!user) {
+        res.status(404).json({ message: 'User not found' });
+        return;
+      }
+
+      if (user.role.name === 'ALUMNO') {
+        const projectStudents = await prisma.projectStudent.findMany({
+          where: { userId, is_archived: true },
+          include: { project: true }
+        });
+
+        const teamMemberships = await prisma.teamMember.findMany({
+          where: { userId },
+          include: { team: true }
+        });
+
+        const projects = projectStudents.map(ps => {
+          const teamMembership = teamMemberships.find(tm => tm.team.projectId === ps.projectId);
+          return {
+            ...ps.project,
+            my_team: teamMembership ? teamMembership.team : null
+          };
+        });
+
+        res.status(200).json({ projects });
+      } else {
+        const collaborations = await prisma.projectProfessor.findMany({
+          where: { userId, is_archived: true },
+          include: {
+            project: {
+              include: {
+                creator: {
+                  select: {
+                    full_name: true,
+                  }
+                }
+              }
+            }
+          }
+        });
+
+        const createdProjects = await prisma.project.findMany({
+          where: { creator_id: userId },
+          include: {
+            professors: {
+              where: { userId, is_archived: true }
+            }
+          }
+        });
+
+        const projectsSet = new Map();
+        createdProjects.forEach(p => {
+          if (p.professors.length > 0) {
+            const { professors, ...projectWithoutProfessors } = p;
+            projectsSet.set(projectWithoutProfessors.id, projectWithoutProfessors);
+          }
+        });
+        collaborations.forEach(c => projectsSet.set(c.project.id, c.project));
+
+        res.status(200).json({ projects: Array.from(projectsSet.values()) });
+      }
+    } catch (error) {
+      logger.error('Error getting archived projects', { error });
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  }
+
+  public async archiveProject(req: AuthRequest, res: Response): Promise<void> {
+    try {
+      const userId = req.user?.id;
+      const projectId = req.params.id as string;
+
+      if (!userId) {
+        res.status(401).json({ message: 'Unauthorized' });
+        return;
+      }
+
+      const project = await prisma.project.findUnique({
+        where: { id: projectId }
+      });
+
+      if (!project || project.creator_id !== userId) {
+        res.status(403).json({ message: 'No tienes permiso para archivar este proyecto.' });
+        return;
+      }
+
+      await prisma.project.update({
+        where: { id: projectId },
+        data: { is_archived: true }
+      });
+
+      res.status(200).json({ message: 'Proyecto archivado exitosamente' });
+    } catch (error) {
+      logger.error('Error archiving project', { error });
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  }
+
+  public async archiveProjects(req: AuthRequest, res: Response): Promise<void> {
+    try {
+      const userId = req.user?.id;
+      const { projectIds } = req.body;
+
+      if (!userId || !Array.isArray(projectIds)) {
+        res.status(400).json({ message: 'Invalid request' });
+        return;
+      }
+
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        include: { role: true }
+      });
+
+      if (!user) {
+        res.status(404).json({ message: 'User not found' });
+        return;
+      }
+
+      if (user.role.name === 'ALUMNO') {
+        await prisma.projectStudent.updateMany({
+          where: { userId, projectId: { in: projectIds } },
+          data: { is_archived: true }
+        });
+      } else {
+        await prisma.projectProfessor.updateMany({
+          where: { userId, projectId: { in: projectIds } },
+          data: { is_archived: true }
+        });
+      }
+
+      res.status(200).json({ message: 'Projects archived successfully' });
+    } catch (error) {
+      logger.error('Error archiving projects', { error });
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  }
+
+  public async unarchiveProjects(req: AuthRequest, res: Response): Promise<void> {
+    try {
+      const userId = req.user?.id;
+      const { projectIds } = req.body;
+
+      if (!userId || !Array.isArray(projectIds)) {
+        res.status(400).json({ message: 'Invalid request' });
+        return;
+      }
+
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        include: { role: true }
+      });
+
+      if (!user) {
+        res.status(404).json({ message: 'User not found' });
+        return;
+      }
+
+      if (user.role.name === 'ALUMNO') {
+        await prisma.projectStudent.updateMany({
+          where: { userId, projectId: { in: projectIds } },
+          data: { is_archived: false }
+        });
+      } else {
+        await prisma.projectProfessor.updateMany({
+          where: { userId, projectId: { in: projectIds } },
+          data: { is_archived: false }
+        });
+      }
+
+      res.status(200).json({ message: 'Projects unarchived successfully' });
+    } catch (error) {
+      logger.error('Error unarchiving projects', { error });
       res.status(500).json({ message: 'Internal server error' });
     }
   }
@@ -321,7 +520,6 @@ export class ProjectController {
             select: {
               id: true,
               full_name: true,
-              username: true,
               email: true,
               profile_picture: true
             }
@@ -336,7 +534,6 @@ export class ProjectController {
             select: {
               id: true,
               full_name: true,
-              username: true,
               email: true,
               profile_picture: true
             }
@@ -555,10 +752,8 @@ export class ProjectController {
             select: {
               id: true,
               full_name: true,
-              username: true,
               email: true,
-              profile_picture: true,
-              bio: true
+              profile_picture: true
             }
           }
         }

@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken';
 import { OAuth2Client } from 'google-auth-library';
 import prisma from '../utils/prisma';
 import logger from '../utils/logger';
+import { encryptField, decryptField } from '../utils/encryption.util';
 
 const googleClient = new OAuth2Client(
   process.env.GOOGLE_CLIENT_ID,
@@ -137,10 +138,10 @@ export class AuthService {
         user = await prisma.user.update({
           where: { email },
           data: {
-            full_name: user.full_name || fullName,
+            full_name: user.full_name || fullName || null,
             profile_picture: user.profile_picture || profilePicture,
-            google_access_token: accessToken || user.google_access_token,
-            google_refresh_token: refreshToken || user.google_refresh_token
+            google_access_token: accessToken ? encryptField(accessToken) : user.google_access_token,
+            google_refresh_token: refreshToken ? encryptField(refreshToken) : user.google_refresh_token
           },
           include: { role: true }
         });
@@ -221,10 +222,10 @@ export class AuthService {
         data: {
           secondary_email: isSameEmail ? currentUser.secondary_email : email,
           secondary_is_verified: isSameEmail ? currentUser.secondary_is_verified : true,
-          full_name: currentUser.full_name || fullName,
+          full_name: currentUser.full_name || fullName || null,
           profile_picture: currentUser.profile_picture || profilePicture,
-          google_access_token: accessToken || currentUser.google_access_token,
-          google_refresh_token: refreshToken || currentUser.google_refresh_token,
+          google_access_token: accessToken ? encryptField(accessToken) : currentUser.google_access_token,
+          google_refresh_token: refreshToken ? encryptField(refreshToken) : currentUser.google_refresh_token,
           google_email: email,
           is_verified: isSameEmail ? true : currentUser.is_verified
         }
