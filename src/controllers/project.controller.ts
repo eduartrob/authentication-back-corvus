@@ -4,6 +4,8 @@ import { z } from 'zod';
 import logger from '../utils/logger';
 import prisma from '../utils/prisma';
 import crypto from 'crypto';
+import { rabbitmqService } from '../services/rabbitmq.service';
+
 
 const createProjectSchema = z.object({
   name: z.string(),
@@ -158,6 +160,29 @@ export class ProjectController {
             userId: userId
           }
         });
+
+        // -# Notificar a todos los profesores del proyecto que un alumno se unio
+        try {
+          const projectWithProfs = await prisma.project.findUnique({
+            where: { id: project.id },
+            include: { professors: true }
+          });
+          const profIds = new Set<string>();
+          if (project.creator_id) profIds.add(project.creator_id);
+          projectWithProfs?.professors.forEach(p => profIds.add(p.userId));
+
+          for (const profId of profIds) {
+            await rabbitmqService.publishPushNotification({
+              user_id: profId,
+              title: 'Nuevo alumno en tu proyecto',
+              body: `${user.full_name || user.username || 'Un alumno'} se ha unido al proyecto "${project.name}".`,
+              type: 'project_event',
+              deepLink: `/project/${project.id}?tab=2`
+            });
+          }
+        } catch (notifErr) {
+          logger.error('Error notificando profesores al unirse alumno', { notifErr });
+        }
 
         res.status(200).json({ message: 'Código válido. Te has unido a la clase exitosamente.', project, isProfessor: false });
       }
@@ -599,6 +624,21 @@ export class ProjectController {
         }
       });
 
+      // -# Notificar al profesor invitado
+      try {
+        const inviter = await prisma.user.findUnique({ where: { id: profId } });
+        const project = await prisma.project.findUnique({ where: { id: projectId as string } });
+        await rabbitmqService.publishPushNotification({
+          user_id: invitee.id,
+          title: 'Invitación a proyecto',
+          body: `${inviter?.full_name || 'Un profesor'} te invitó a colaborar en el proyecto "${project?.name || ''}".`,
+          type: 'project_invite',
+          deepLink: '/projects'
+        });
+      } catch (notifErr) {
+        logger.error('Error notificando invitación de colaborador', { notifErr });
+      }
+
       res.status(201).json({ message: 'Invitación enviada exitosamente.', collaborator: newCollaborator });
     } catch (error) {
       logger.error('Error adding collaborator', { error });
@@ -645,6 +685,26 @@ export class ProjectController {
           theme_pattern: parsedData.theme_pattern
         }
       });
+
+      // -# Notificar a todos los alumnos del proyecto que fue actualizado
+      try {
+        const students = await prisma.projectStudent.findMany({
+          where: { projectId: projectId as string },
+          select: { userId: true }
+        });
+        const updater = await prisma.user.findUnique({ where: { id: profId } });
+        for (const s of students) {
+          await rabbitmqService.publishPushNotification({
+            user_id: s.userId,
+            title: 'Proyecto actualizado',
+            body: `${updater?.full_name || 'Tu profesor'} actualizó el proyecto "${updatedProject.name}".`,
+            type: 'project_updated',
+            deepLink: `/project/${projectId}`
+          });
+        }
+      } catch (notifErr) {
+        logger.error('Error notificando actualizacion de proyecto', { notifErr });
+      }
 
       res.status(200).json({ message: 'Proyecto actualizado.', project: updatedProject });
     } catch (error) {
@@ -730,6 +790,23 @@ export class ProjectController {
         data: { isAccepted: true }
       });
 
+      // -# Notificar al creador del proyecto que alguien acepto
+      try {
+        const project = await prisma.project.findUnique({ where: { id: projectId as string } });
+        const accepter = await prisma.user.findUnique({ where: { id: profId } });
+        if (project && project.creator_id !== profId) {
+          await rabbitmqService.publishPushNotification({
+            user_id: project.creator_id,
+            title: 'Invitación aceptada',
+            body: `${accepter?.full_name || 'Un profesor'} aceptó unirse al proyecto "${project.name}".`,
+            type: 'project_event',
+            deepLink: `/project/${projectId}`
+          });
+        }
+      } catch (notifErr) {
+        logger.error('Error notificando aceptacion de invitacion', { notifErr });
+      }
+
       res.status(200).json({ message: 'Invitación aceptada.' });
     } catch (error) {
       logger.error('Error accepting invitation', { error });
@@ -785,6 +862,138 @@ export class ProjectController {
       res.status(200).json({ message: 'Colaborador/invitación eliminado.' });
     } catch (error) {
       logger.error('Error removing collaborator', { error });
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  }
+
+  public async getArchivedProjects(req: AuthRequest, res: Response): Promise<void> {
+    try {
+      const userId = req.user?.id;
+      if (!userId) {
+        res.status(401).json({ message: 'Unauthorized' });
+        return;
+      }
+
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        include: { role: true }
+      });
+
+      if (!user) {
+        res.status(404).json({ message: 'User not found' });
+        return;
+      }
+
+      if (user.role.name === 'ALUMNO') {
+        const projectStudents = await prisma.projectStudent.findMany({
+          where: { userId, project: { is_archived: true } },
+          include: { project: true }
+        });
+
+        const teamMemberships = await prisma.teamMember.findMany({
+          where: { userId },
+          include: { team: true }
+        });
+
+        const projects = projectStudents.map(ps => {
+          const teamMembership = teamMemberships.find(tm => tm.team.projectId === ps.projectId);
+          return {
+            ...ps.project,
+            my_team: teamMembership ? teamMembership.team : null
+          };
+        });
+
+        res.status(200).json({ projects });
+      } else {
+        const collaborations = await prisma.projectProfessor.findMany({
+          where: { userId, project: { is_archived: true } },
+          include: {
+            project: {
+              include: {
+                creator: { select: { full_name: true } }
+              }
+            }
+          }
+        });
+
+        const createdProjects = await prisma.project.findMany({
+          where: { creator_id: userId, is_archived: true },
+          include: {
+            creator: { select: { full_name: true } }
+          }
+        });
+
+        const projectsSet = new Map();
+        createdProjects.forEach(p => projectsSet.set(p.id, p));
+        collaborations.filter(c => c.isAccepted).forEach(c => projectsSet.set(c.projectId, c.project));
+
+        res.status(200).json({ projects: Array.from(projectsSet.values()) });
+      }
+    } catch (error) {
+      console.error(error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  }
+
+  public async archiveProjects(req: AuthRequest, res: Response): Promise<void> {
+    try {
+      const userId = req.user?.id;
+      if (!userId) {
+        res.status(401).json({ message: 'Unauthorized' });
+        return;
+      }
+
+      const { projectIds } = req.body;
+      if (!Array.isArray(projectIds) || projectIds.length === 0) {
+        res.status(400).json({ message: 'No project IDs provided' });
+        return;
+      }
+
+      // Check if user is PROFESOR or ADMINISTRADOR? The user said "del lado de alumnos ellos tambien podran seleccionar uno y archivarlo"
+      // Which means students can also archive projects. And it sets is_archived = true.
+      
+      await prisma.project.updateMany({
+        where: {
+          id: { in: projectIds }
+        },
+        data: {
+          is_archived: true
+        }
+      });
+
+      res.status(200).json({ message: 'Projects archived successfully' });
+    } catch (error) {
+      console.error(error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  }
+
+  public async unarchiveProjects(req: AuthRequest, res: Response): Promise<void> {
+    try {
+      const userId = req.user?.id;
+      if (!userId) {
+        res.status(401).json({ message: 'Unauthorized' });
+        return;
+      }
+
+      const { projectIds } = req.body;
+      if (!Array.isArray(projectIds) || projectIds.length === 0) {
+        res.status(400).json({ message: 'No project IDs provided' });
+        return;
+      }
+      
+      await prisma.project.updateMany({
+        where: {
+          id: { in: projectIds }
+        },
+        data: {
+          is_archived: false
+        }
+      });
+
+      res.status(200).json({ message: 'Projects unarchived successfully' });
+    } catch (error) {
+      console.error(error);
       res.status(500).json({ message: 'Internal server error' });
     }
   }

@@ -9,10 +9,15 @@ export class ProfessorController {
       const q = req.query.q as string || '';
       const currentUserId = req.user?.id;
       
+      const projectId = req.query.projectId as string | undefined;
+
       const professors = await prisma.user.findMany({
         where: {
           role: { name: { in: ['PROFESOR', 'DOCENTE'] } },
           id: currentUserId ? { not: currentUserId } : undefined,
+          project_professors: projectId ? {
+            none: { projectId }
+          } : undefined,
           OR: [
             { full_name: { contains: q, mode: 'insensitive' } },
             { email: { contains: q, mode: 'insensitive' } },
